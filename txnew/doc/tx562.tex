@@ -3594,6 +3594,24 @@ either case.
   $W_\r{p}$ 1.088 MJ, ambipolarity $1.2\times10^{-6}$ in both; retried steps 2 / 246 (the window at 1.310--1.335 s),
   one step of the initial transient not converged at $\Delta t/2$ in both.  With \texttt{imodel\_neo(4)} = 0 the
   benchmark of the item on the production defaults above is reproduced bit for bit (all sweeps of the 40000 steps).
+\item Effective energy of the beam ions in the neoclassical solver (nccoe, booth9).  The beam friction and viscosity use
+  the energy $E_\r{b} = x_\r{b}E_\r{c}$ at which the slowing-down distribution $f\propto1/(v^3+v_\r{c}^3)$ on
+  $3T_\r{i}<E<E_\r{b}$ has the beam temperature as its mean energy, $T(x_\r{b}) = T_\r{b}$ with
+  $T(x) = E_\r{c}[F(x)-F(x_0)]/\ln[(1+x^{3/2})/(1+x_0^{3/2})]$, $x_0 = 3T_\r{i}/E_\r{c}$.  The integral
+  $F$ was a trapezoidal sum with $\Delta x = 0.1$ (about 4000 terms in the SOL, 6.5--9.4\% of a Picard sweep
+  with NBI); it is now the closed form $F(x) = x - G(x)$,
+  $G = -\frac23\ln(1+u)+\frac13\ln(u^2-u+1)+\frac{2}{\sqrt3}\arctan\frac{2u-1}{\sqrt3}$, $u = \sqrt x$, and the
+  equation is solved by Newton's method safeguarded by a bracket and bisection (\texttt{beam\_energy\_ratio},
+  shared by nccoe and booth9; for $T_\r{b}\le2T_\r{i}$, where no root exists, $x_\r{b} = x_0$).  The continuous
+  model is unchanged: the trapezoidal error of $E_\r{b}$, up to $\sim10^{-3}$, is removed, and with NBI the
+  solution changes by less than $\sim10^{-4}$ (JT-60U case, 1.5 s: rotation $1.5\times10^{-5}$, the NBCD
+  current profile $10^{-4}$, densities and temperatures $\le2\times10^{-5}$); runs without NBI are
+  bit-identical.  The 4 s JT-60U benchmark of the item on the potato closure changes by at most $2.2\times10^{-5}$
+  ($n_\r{z}(0)$; $n_\r{e}(0)$ $1.1\times10^{-5}$, $T_\r{i}(0)$ $8\times10^{-6}$, $u_{\r{i}\phi}(0)$ $1.5\times10^{-5}$, the NBCD current
+  $5\times10^{-5}$, $W_\r{p}$ unchanged): its printed values stay, except the ambipolarity ($1.3\times10^{-6}$ with
+  \texttt{imodel\_neo(4)} = 1) and the step of the initial transient, which now converges at $\Delta t/2$; the Picard
+  count and the 246 retried steps are the same.  A Picard sweep with NBI costs 8--12\% less (\texttt{NRMAX} = 60;
+  1.5 and 4 s).
 \item Recycling at the main wall.  The radial ion outflow through the wall $\rho_b$,
   $\Gamma_s(\rho_b)^+ = \max(n_s\aves{\vec{u}_s\cdot\nabla V}, 0)$ at \texttt{NRMAX}, returns as a
   wall-side inflow of neutrals like the gas puff: \texttt{RWALL} (default 0.98) of the bulk ions
