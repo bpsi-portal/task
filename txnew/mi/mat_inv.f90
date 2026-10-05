@@ -1,5 +1,9 @@
 module matrix_inversion
   implicit none
+  ! Orbit-averaged potato closure (imodel_neo(4) = 1, see nccoe and potato_moments):
+  ! eps^2 of the node and the flag of the second (flux-side) nccoe pass
+  real(8), save :: pot_eps2 = 0.d0
+  logical, save :: pot_flux = .false.
 
 contains
 
@@ -31,7 +35,7 @@ contains
 !!$    imodel(1) = 0 ! Fast ion viscosity
 !!$    imodel(2) = 1 ! Required for NBCD
 !!$    imodel(3) = 2 ! Fast ion contribution to friction forces
-!!$    imodel(4) = 0 ! Unused
+!!$    imodel(4) = 0 ! Potato closure: 0 none, 1 orbit-averaged (MDLNEO = 2, imodel(5) = 0)
 !!$    imodel(5) = 0 ! PS contribution nil when 1
 !!$    imodel(6) = 3 ! Higher-order flow contribution, valid only for nccoe
     imodel(:) = imodel_neo(:)
@@ -292,6 +296,19 @@ contains
     do i1 = 1, NSM
        BnablaPi(NR,i1) = sum(xmu(NR,i1,1,1:2) * ( BusparNCL(NR,i1,1:2) - BVsdiag(NR,i1,1:2) ))
     end do
+
+    !-- Orbit-averaged potato closure (imodel_neo(4) = 1): the flux side (ChiNC, D and gflux below)
+    !   comes from a second nccoe pass in which the potato part of the velocity-dependent viscosity
+    !   carries the reflecting random-walk factor K(s) of the orbit width (potato_moments).
+    !   xmu, lab, the flows, ETA and BJBS above keep the first pass.
+    if( MDLNEOL == 2 .and. imodel(4) == 1 .and. imodel(5) == 0 ) then
+       pot_eps2 = epst(NR)**2
+       pot_flux = .true.
+       call nccoe (coebsc,coencc,coebdc,amat,bmat,cmat,dmat,alf &
+            &     ,PNsVL,PTsVL,amasL,achgL,mxneo(NR),fmneo(1,NR),gamneo(NR),ftl,sqzfac,ztau &
+            &     ,NSM,ibeam,imodel,fbeam,midbg(1))
+       pot_flux = .false.
+    end if
 
     !-- Neoclassical heat diffusivities
     if( NR /= 0 ) then
@@ -610,7 +627,7 @@ contains
 !                    with H&S finite-collisionality transition
 !
 !=======================================================================
-    use tx_commons, only : cnpi => Pi, cnmp => AMP, cnec => AEE
+    use tx_commons, only : cnpi => Pi, cnmp => AMP, cnec => AEE, Q, fipol, rrt, elip
     !    use lapack95, only : getrf, getri
     use libinv, only : invmrd
     implicit none
@@ -645,6 +662,8 @@ contains
     real(8) :: epsab, c2, f, alp, barK1, barK2, barK2mod &
          &   , c1, c1a, c3
     real(8) :: funp, fundp
+    real(8) :: potl, potb, cpo1, c4pot, pk11, pk12, pk22
+    logical :: lpot
     integer :: i, i1, i2, i3, ib, ill, is, isp, isp2, ivmax &
          &   , j, j1, j2, js, k, m
 !    integer, allocatable :: ipiv(:)
@@ -1319,10 +1338,22 @@ contains
 !=======================================================================
 !   viscosity coeff for bulk particles
 !=======================================================================
+    ! Potato closure (imodel(4) = 1, with the default PS treatment imodel(5) = 0): the velocity
+    ! moments below are replaced by those of potato_moments, in which the potato and potato-plateau
+    ! branches (Shaing et al. PoP 3 (1996) 965; Shaing & Hazeltine PoP 4 (1997) 4331) join the
+    ! banana-PS viscosity of each velocity.  potl = q(0) R(0), potb = kappa(0) B_t(0)/(2 q(0)^2),
+    ! cpo1 = 3 (2.19)/2^(3/2) is the potato coefficient of NCLASS.
+    lpot = imodel(4) == 1 .and. imodel(5) == 0
+    if(lpot) then
+       potl = Q(0) * sqrt(rrt(0))
+       potb = elip(0) * fipol(0) / sqrt(rrt(0)) / (2.d0 * Q(0)**2)
+       cpo1 = 3.d0 * 2.19d0 / 2.d0**1.5d0
+    end if
     do i1=1,ispc
        xke11=0.d0
        xke12=0.d0
        xke22=0.d0
+       if(lpot) c4pot = zmas(i1) * vt(i1) / (abs(zz(i1)) * cnec * potb * potl)
        dx=vxmax/ivmax
        do i=1,ivmax
           xa=dx*i-0.5d0*dx
@@ -1389,6 +1420,14 @@ contains
           xke12=xke12+yk1
           xke22=xke22+yk2
        enddo
+       if(lpot) then
+          ! arguments by value (expressions) so that no address of the loop's locals escapes
+          call potato_moments((i1),(ispc),(ivmax),(dx),vt,tem,ztau,(sqzfac(i1)),(xgt),(mxneo),fmneo,(gmneo), &
+               &              (c4pot),(cpo1),(potl),(zp43),pk11,pk12,pk22)
+          xke11 = pk11
+          xke12 = pk12
+          xke22 = pk22
+       end if
 !-----------------------------------------------------------------------
 !         renormalized by tau_aa / (ma * na) for consistency against booth9
        renorm = ztau(i1,i1) / (zmas(i1) * den(i1))
@@ -1706,6 +1745,107 @@ contains
     deallocate(lab,mab,nab,vt,vtn,xmu)
 
   end subroutine nccoe
+
+!=======================================================================
+  subroutine potato_moments(i1,ispc,ivmax,dx,vt,tem,ztau,sqz,xgt,mxneo,fmneo,gmneo, &
+       &                    c4pot,cpo1,potl,zp43,xke11,xke12,xke22)
+!=======================================================================
+!   Velocity moments xke11/12/22 of the viscosity of species i1 with the potato closure
+!   (imodel_neo(4) = 1), on the velocity grid of nccoe (x = v/v_t):
+!
+!     k_MI  = H(k_b, k_ps), H(a,b) = a b/(a+b): banana-PS viscosity of nccoe
+!     k_po  = cpo1 (x c4)^(1/3) nu_D/sqz^(5/3): potato (NCLASS; Shaing et al. PoP 3 (1996) 965),
+!             c4 = m v_t/(|Z| e potb potl) = 2 q(0) rho_t/(kappa(0) R(0))
+!     k_pp  = 0.07 (3 sqrt(pi)/4) x^(7/3) v_t c4^(4/3)/(q(0) R(0)): potato-plateau
+!             (Shaing & Hazeltine, PoP 4 (1997) 4331, Eq. 6)
+!     the plateau/PS limit of the potato branch is taken at the orbit width of the particles
+!     that set it: nu*_pot = k_po/k_pp, k_p = k_pp (1+nu*_pot)^(-2/3) I_1(u)/((pi/4) u),
+!     u = nu_T q(0) R(0)/(x v_t) (MI's plateau-PS transition; Helander, PoP 7 (2000) 2878:
+!     the resonant orbits have r_res ~ nu*^(-1/3) r_p)
+!     k_hp  = H(k_po, k_p),  k = w k_hp + (1-w) k_MI,  w = k_hp^3/(k_hp^3 + k_MI^3)
+!
+!   Second (flux-side) pass (pot_flux): the potato part k_hp is multiplied by
+!     K(s) = s (2 - s) for s < 1, 1 for s >= 1,  s = eps^2/Delta(eps^2),
+!     Delta(eps^2) = (x c4)^(4/3) (1+nu*_pot)^(-2/3),
+!   the flux of a random walk in psi whose step is the orbit width (Shaing, Hazeltine &
+!   Zarnstorff, PoP 4 (1997) 771, Sec. VI and Eq. 73) reflected at the axis psi = 0, relative
+!   to the local diffusion law.  The weight w keeps the value of the first pass.
+!=======================================================================
+    use tx_commons, only : cnpi => Pi
+    integer(4), intent(in) :: i1, ispc, ivmax, mxneo
+    real(8), intent(in) :: dx, vt(:), tem(:), ztau(:,:), sqz, xgt, fmneo(10), gmneo, c4pot, cpo1, potl, zp43
+    real(8), intent(out) :: xke11, xke12, xke22
+    integer(4) :: iv, j2, mm
+    real(8) :: x1, x2, x3, y, y2, p, pd, g, tb, nd, nt, kb, kps, k, u, u2, mui, kpo, kpp, hp, w, st, s, e0, e1, e2
+
+    xke11 = 0.d0 ; xke12 = 0.d0 ; xke22 = 0.d0
+    do iv = 1, ivmax
+       x1 = dx * iv - 0.5d0 * dx
+       x3 = x1**3
+       x2 = x1**2
+       ! deflection and energy-scattering rates and k_MI, as in nccoe
+       nd = 0.d0
+       nt = 0.d0
+       do j2 = 1, ispc
+          y = x1 * vt(i1) / vt(j2)
+          y2 = y**2
+          if(y < 5.922d0) then
+             p = erf(y)
+             pd = 2.d0 / sqrt(cnpi) * exp(-y**2)
+          else
+             p = 1.d0
+             pd = 0.d0
+          end if
+          g = (p - y * pd) / (2.d0 * y2)
+          tb = 1.d0 / ztau(i1,j2)
+          nd = nd + tb * (p - g) / x3
+          nt = nt + tb * ((p - 3.d0 * g) / x3 + 4.d0 * (tem(i1) / tem(j2) + (vt(i1) / vt(j2))**2) * g / x1)
+       end do
+       nd = nd * zp43
+       kb = xgt * nd / sqz**1.5d0
+       nt = nt * zp43
+       kps = 0.d0
+       do mm = 1, mxneo
+          u = nt / (x1 * vt(i1) * dfloat(mm) * gmneo)
+          u2 = u * u
+          mui = -1.5d0*u2-4.5d0*u2*u2+(0.25d0+(1.5d0+2.25d0*u2)*u2)*2.d0*u*datan(1.d0/u)
+          if(u > 100.d0) mui = 0.4d0
+          kps = kps + fmneo(mm) * mui
+       end do
+       kps = 1.5d0 * (vt(i1) * x1)**2 * kps / nt
+       if(kb + kps /= 0.d0) then
+          k = kb * kps / (kb + kps)
+       else
+          k = 0.d0
+       end if
+       ! potato and potato-plateau branches
+       kpo = cpo1 * (x1 * c4pot)**(1.d0/3.d0) * nd / sqz**(5.d0/3.d0)
+       kpp = 0.07d0 * 0.75d0 * sqrt(cnpi) * vt(i1) * c4pot**(4.d0/3.d0) * x1**(7.d0/3.d0) / potl
+       st = kpo / kpp
+       u = nt * potl / (x1 * vt(i1))
+       if(u > 100.d0) then
+          mui = 0.4d0
+       else
+          u2 = u * u
+          mui = -1.5d0*u2-4.5d0*u2*u2+(0.25d0+(1.5d0+2.25d0*u2)*u2)*2.d0*u*datan(1.d0/u)
+       end if
+       kpp = kpp * (1.d0 + st)**(-2.d0/3.d0) * mui / (0.25d0 * cnpi * u)
+       hp = kpo * kpp / (kpo + kpp)
+       w = hp**3 / (hp**3 + k**3)
+       if(pot_flux) then
+          ! reflecting random walk in psi with the orbit width as step
+          s = pot_eps2 / ((x1 * c4pot)**(4.d0/3.d0) * (1.d0 + st)**(-2.d0/3.d0))
+          if(s < 1.d0) hp = hp * s * (2.d0 - s)
+       end if
+       k = w * hp + (1.d0 - w) * k
+       e0 = k * exp(-x2) * x2 * x2
+       e1 = e0 * x2
+       e2 = e1 * x2
+       xke11 = xke11 + e0
+       xke12 = xke12 + e1
+       xke22 = xke22 + e2
+    end do
+  end subroutine potato_moments
 
 !=======================================================================
   subroutine booth9(coebsc,coencc,coebdc,amat,bmat,cmat,alf &

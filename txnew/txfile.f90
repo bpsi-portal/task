@@ -379,7 +379,7 @@ subroutine TXLOAD(IST)
   integer(4) :: NQ, NR, NC, I, IGYT, IGYV, io
   character(len=100) ::  TXFNAM, RCSId
   character(len=8) :: LOADSLID
-  integer(4) :: istx, iextver, mdlnsup_load
+  integer(4) :: istx, iextver, mdlnsup_load, ipot_cur
   real(8), dimension(3) :: rwall_load
   real(8), dimension(NSM) :: fstptm_load
   logical :: LEX
@@ -435,7 +435,12 @@ subroutine TXLOAD(IST)
   read(io) ICMAX,NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
   read(io) MODEG,MODEAV,MODEGL,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab,IGBDF
   read(io) ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor
+  ! imodel_neo (with the potato closure imodel_neo(4)) travels in this record: a file keeps the
+  ! closure it was run with (0, the matrix inversion without it, in files written before the closure).
+  ipot_cur = imodel_neo(4)
   read(io) MDLETB,MDLNBD,MDBMCX,imodel_neo,MDLC,NTCOIL,m_pol,n_tor
+  if( imodel_neo(4) /= ipot_cur ) write(6,'(A,I2,A,I2,A)') &
+       & ' ## Potato closure from the file: imodel_neo(4) =', imodel_neo(4), ' (was', ipot_cur, ')'
 
   read(io) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
 
