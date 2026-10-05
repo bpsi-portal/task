@@ -659,12 +659,12 @@ contains
     real(8), allocatable :: laborg(:,:,:,:), laborgdef(:,:,:,:), labdef(:,:,:,:) &
          &   , labnrl(:,:,:,:), lab3(:,:,:)
     real(8) :: dx, eb, ec, err, fac, fdp, fm, fp, gfun &
-         &   , sint, sq3, tbdc, teff &
-         &   , teff0, vb, vb2, vb3, vbc3, vc, vc3  &
-         &   , vxmax, wc3, x, x0, x32, xa, xa2, xa3, xab2 &
+         &   , sq3, tbdc &
+         &   , vb, vb2, vb3, vbc3, vc, vc3  &
+         &   , vxmax, wc3, x, xa, xa2, xa3, xab2 &
          &   , xab4, xb, xc0, xfac, xtab, xgt, xke11, xke12, xke22 &
-         &   , xl, xp321, xx, yk0, yk1, yk2, z1, z2 &
-         &   , z3, z30, zat, zeff, zk, zkb, zkps, zmud, zmui, zmut &
+         &   , xl, xx, yk0, yk1, yk2, z1, z2 &
+         &   , zat, zeff, zk, zkb, zkps, zmud, zmui, zmut &
          &   , zomg, zp43, zu, zu2, zui, renorm, y &
          &   , xmu1, xmu2, xmu3, ell11, ell12, ell22, tmp &
          &   , yab, sqdnm, ytemab, denom &
@@ -1502,25 +1502,8 @@ contains
           vc=vc3**(1.d0/3.d0) ! critical speed
           ec=mas(ib)*vc**2*0.5d0
 !--effective beam energy eb <-- nb, tb=pb/nb
-          sint=0.d0
-          x=3.d0*tem(2)/ec
-          x32=x**1.5d0
-          xp321=x32+1.d0
-          z3=x32/(1.d0+x32)
-          dx=0.1d0
-          teff=0.d0
-          do while( teff < tem(ib) )
-             x0=x
-             teff0=teff
-             x=x+dx
-             eb=x*ec
-             z30=z3
-             x32=x**1.5d0
-             z3=x32/(1.d0+x32)
-             sint=sint+0.5d0*(z3+z30)*dx
-             teff=ec*sint/dlog((x32+1.d0)/xp321)
-          enddo
-          eb=ec*(x0+dx*(tem(ib)-teff0)/(teff-teff0))
+          x=beam_energy_ratio(3.d0*tem(2)/ec, tem(ib)/ec)
+          eb=x*ec
           vb=sqrt(2.d0*eb/mas(ib))
           vb2=vb*vb
           vb3=vb2*vb
@@ -1914,6 +1897,91 @@ contains
   end subroutine potato_moments
 
 !=======================================================================
+  real(8) function beam_energy_ratio(x0, t) result(xb)
+!=======================================================================
+!   Effective energy of the beam ions (nccoe, booth9): x_b = E_b/E_c, the upper end of the
+!   slowing-down distribution f ~ 1/(v^3 + v_c^3) on x0 < x < x_b (x = E/E_c, x0 = 3 T_i/E_c)
+!   whose mean energy is the beam temperature t E_c:
+!     T(x) = [F(x) - F(x0)] / ln[(1 + x^(3/2))/(1 + x0^(3/2))] = t,
+!     F(x) = x - G(x), an antiderivative of x^(3/2)/(1 + x^(3/2)),
+!     G(x) = -(2/3) ln(1+u) + (1/3) ln(u^2 - u + 1) + (2/sqrt(3)) atan((2u - 1)/sqrt(3)), u = sqrt(x),
+!   (G' = 1/(1 + x^(3/2)); up to 2026-10 the integral was a trapezoidal sum with dx = 0.1 and a
+!   linear interpolation in the last interval, relative error of x_b up to 6e-4).
+!   Solved as g(x) = F(x) - F(x0) - t ln[...] = 0: g(x0) = 0 and g' = sqrt(x)(x - 1.5t)/(1 + x^(3/2)),
+!   so g < 0 on (x0, x_b) and g is increasing and convex beyond 1.5t: the root is unique and
+!   Newton from the right of a bracket converges monotonically; a step that leaves the bracket or
+!   a non-positive derivative falls back to bisection.  The start is the large-x limit
+!   G -> pi/sqrt(3), x = F(x0) + pi/sqrt(3) + t ln[(1 + x^(3/2))/(1 + x0^(3/2))], iterated twice.
+!   T(x) > x0/1.5 for x > x0: for t <= x0/1.5 (T_b <= 2 T_i) there is no root and x0 is returned.
+    use tx_commons, only : cnpi => Pi
+    real(8), intent(in) :: x0, t
+    real(8) :: a, b, x, xn, g, dg, dxn, f0, l0, u
+    integer :: k
+
+    if( t <= x0 / 1.5d0 ) then
+       xb = x0
+       return
+    end if
+    f0 = beam_sd_integral(x0)
+    l0 = 1.d0 + x0 * sqrt(x0)
+    ! bracket [a, b] with g(a) < 0 <= g(b)
+    a = max(x0, 1.5d0 * t)
+    x = a + 1.d0
+    do k = 1, 2
+       x = max(x, f0 + cnpi / sqrt(3.d0) + t * log((1.d0 + x * sqrt(x)) / l0))
+    end do
+    b = max(x, a + 1.d0)
+    do while( g_of(b) < 0.d0 )
+       a = b
+       b = 2.d0 * b
+    end do
+    ! safeguarded Newton from the right
+    x = b
+    do k = 1, 100
+       g = g_of(x)
+       if( g == 0.d0 ) exit
+       if( g > 0.d0 ) then
+          b = x
+       else
+          a = x
+       end if
+       u = sqrt(x)
+       dg = u * (x - 1.5d0 * t) / (1.d0 + x * u)
+       xn = 0.5d0 * (a + b)
+       if( dg > 0.d0 ) then
+          dxn = g / dg
+          if( abs(dxn) <= 1.d-14 * x ) then   ! converged (tested before the bracket, which rounding can tie)
+             x = x - dxn
+             exit
+          end if
+          if( x - dxn > a .and. x - dxn < b ) xn = x - dxn
+       end if
+       x = xn
+       if( b - a <= 1.d-14 * b ) exit         ! bracket collapsed (bisection)
+    end do
+    xb = x
+
+  contains
+
+    real(8) function g_of(y)
+      real(8), intent(in) :: y
+      g_of = beam_sd_integral(y) - f0 - t * log((1.d0 + y * sqrt(y)) / l0)
+    end function g_of
+
+  end function beam_energy_ratio
+
+!=======================================================================
+  real(8) function beam_sd_integral(x)
+!=======================================================================
+!   F(x) of beam_energy_ratio, an antiderivative of x^(3/2)/(1 + x^(3/2))
+    real(8), intent(in) :: x
+    real(8) :: u
+    u = sqrt(x)
+    beam_sd_integral = x - ( -2.d0/3.d0 * log(1.d0 + u) + log(u*u - u + 1.d0) / 3.d0 &
+         &                   + 2.d0 / sqrt(3.d0) * atan((2.d0*u - 1.d0) / sqrt(3.d0)) )
+  end function beam_sd_integral
+
+!=======================================================================
   subroutine booth9(coebsc,coencc,coebdc,amat,bmat,cmat,alf &
        &           ,den,tem,mas,zz,tpfneo,sqzfac,xsta,ztau &
        &           ,ispc,ibeam,imodel,fbeam,eps,omgtau)
@@ -1977,12 +2045,12 @@ contains
   real(8), allocatable :: lab(:,:,:,:), mab(:,:,:,:), nab(:,:,:,:), vt(:), xmu(:,:,:)
 !LAPACK  integer(4), allocatable :: ipiv(:)
   real(8) :: dx, eb, ec, err, fac, fdp, fp, gfun &
-       &   , sint, sq3, tbdc, teff, teff0 &
+       &   , sq3, tbdc &
        &   , vb, vb2, vb3, vbc3, vc, vc3, vxmax &
-       &   , wc3, x, x0, x32, xa, xa2, xa3, xab2, xab4, xb, xc0 &
+       &   , wc3, x, xa, xa2, xa3, xab2, xab4, xb, xc0 &
        &   , xfac, xtab, xgt, xke11, xke12, xke22, xl &
-       &   , xp321, xx, yk0, yk1, yk2, z1, z2, z3 &
-       &   , z30, zeff, zk, zmud, zmut, zp43, y, zkdenom, dsecnd, s_init
+       &   , xx, yk0, yk1, yk2, z1, z2 &
+       &   , zeff, zk, zmud, zmut, zp43, y, zkdenom, dsecnd, s_init
   real(8) :: xsign = -1.d0, void = 0.d0
   integer :: i, i1, i2, ib, ill, isp, isp2, ivmax &
        &   , j, j1, j2, k
@@ -2149,25 +2217,8 @@ contains
           vc=vc3**(1.d0/3.d0) ! critical speed
           ec=mas(ib)*vc**2*0.5d0
 !--effective beam energy eb <-- nb, tb=pb/nb
-          sint=0.d0
-          x=3.d0*tem(2)/ec
-          x32=x**1.5d0
-          xp321=x32+1.d0
-          z3=x32/(1.d0+x32)
-          dx=0.1d0
-          teff=0.d0
-          do while( teff < tem(ib) )
-             x0=x
-             teff0=teff
-             x=x+dx
-             eb=x*ec
-             z30=z3
-             x32=x**1.5d0
-             z3=x32/(1.d0+x32)
-             sint=sint+0.5d0*(z3+z30)*dx
-             teff=ec*sint/log((x32+1.d0)/xp321)
-          end do
-          eb=ec*(x0+dx*(tem(ib)-teff0)/(teff-teff0))
+          x=beam_energy_ratio(3.d0*tem(2)/ec, tem(ib)/ec)
+          eb=x*ec
           vb=sqrt(2.d0*eb/mas(ib))
           vb2=vb*vb
           vb3=vb2*vb
