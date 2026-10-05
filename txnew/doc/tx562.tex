@@ -3519,13 +3519,14 @@ either case.
   \texttt{parm/txparm.v552default} sets all inputs whose defaults changed after V5.52.20 back to
   the V5.52 values (also the pinch without saturation and taper, \texttt{FSTPTM} = 2,
   \texttt{FSVAHL} = $-0.5$, the V5.52 \texttt{PNsSUP} with \texttt{MDLNSUP} = 0, no main-wall
-  recycling, \texttt{NRETRY} = 0) and lists what no input restores: the inward constant term of the
+  recycling, \texttt{NRETRY} = 0, \texttt{imodel\_neo(4)} = 0) and lists what no input restores: the inward constant term of the
   pinch, the discretely conserving friction, the V5.61 fast-ion fixes and the wall-row form.  In
   the JT-60U-like case without NBI (1.5 s) the code just before the wall-row fix reproduces
   V5.52.20 with these inputs to $2\times10^{-4}$ in the densities; the wall-row fix lowers the density
   level by 4.8\% ($n_\r{z}$ by 8\%), uniformly in radius, and is the only noticeable difference; with NBI
   the core rotation is 40\% higher than in V5.52.20 (pinch sign, V5.61 fast-ion fixes).  The benchmark results quoted above for the
-  wall row, the recycling and \texttt{PNsSUP(1)} = 0.0125 refer to the old defaults.
+  wall row, the recycling and \texttt{PNsSUP(1)} = 0.0125 refer to the old defaults.  All benchmark numbers of this document
+  before the item on the potato closure below were computed with \texttt{imodel\_neo(4)} = 0; that item gives the change by 1.
 \item \texttt{NRETRY} (default 1): a step whose Picard iteration reaches \texttt{ICMAX} without
   converging is taken again from its start as 2, 4, \ldots\ substeps, down to $\Delta t/2^k$ for
   \texttt{NRETRY} = $k$ ($\le 4$); the first substep is backward Euler, the others BDF2, and the
@@ -3554,6 +3555,45 @@ either case.
   run stays positive to 0.4 s but still stalls often, so $\Delta t$ of about $10^{-5}$ s is advised
   there.  With 6.4 MW and \texttt{FSTPTM} = 4 at \texttt{NRMAX} = 120 the impurity density on the
   axis becomes negative at 0.86 s even with \texttt{NRETRY} = 1.  The continuum solution is regular.
+\item Potato closure near the magnetic axis, \texttt{imodel\_neo(4)} (default 1 since 2026-10; this element of
+  \texttt{imodel\_neo} was unused before).  The matrix inversion (\texttt{MDLNEO} = 2) takes the viscosity of each
+  velocity as the harmonic mean of its banana and Pfirsch--Schl\"uter values.  Near the axis the share of the fast
+  tail limited by the banana value changes with $\varepsilon$ ($f_\r{t}\propto\sqrt\varepsilon$), and the poloidal
+  momentum balance, which fixes the poloidal flow algebraically at each radius, carried this into $BV_1$ and $\Phi$:
+  they were not analytic in $V$ inside $\rho\approx0.05$, which for the thermal ions lies inside their potato width
+  ($\rho\approx0.03$--0.05), where the local theory does not hold.  With \texttt{imodel\_neo(4)} = 1,
+  (i) the viscosity of each velocity joins a potato branch (the coefficient of NCLASS, Shaing et al.\ 1996) and a
+  potato-plateau branch with the coefficient of Shaing and Hazeltine, Phys.\ Plasmas \textbf{4} (1997) 4331, Eq.~(6),
+  $K_\r{pp} = 0.0930\,x^{7/3}v_\r{t}c_4^{4/3}/(q_0R_0)$ ($c_4 = 2q_0\rho_\r{t}/(\kappa_0R_0)$, $x = v/v_\r{t}$), whose
+  plateau/PS limit is taken at the orbit width of the particles that set it; this viscosity gives \texttt{xmu}, the
+  flows, the resistivity and the bootstrap current; (ii) for ChiNC, $D$ and gflux the potato part carries
+  $K(s) = s(2-s)$ for $s<1$ (1 beyond), $s = \varepsilon^2/[(xc_4)^{4/3}(1+\nu_*)^{-2/3}]$: the flux of a random walk in
+  the canonical momentum $\psi$ whose step is the orbit width (Shaing, Hazeltine and Zarnstorff, Phys.\ Plasmas
+  \textbf{4} (1997) 771, Eqs.~(61) and (73)), reflected at the axis.  There is no new input.  0 is the former matrix
+  inversion.  The value acts only with \texttt{MDLNEO} = 2 and \texttt{imodel\_neo(5)} = 0; other settings ignore it
+  without a message.  The derivation, the literature and the validation are in \texttt{potato\_axis\_regularization.tex}
+  (beside \texttt{twofluid.tex}).  With 1 the centre of $T_\r{i}$ is $O(V)$, and $T_\r{i}$, $\Phi$, $BV_{1\r{z}}$
+  and the $\Phi$ part of $BV_{1\r{e}}$ are regular outside the first two or three elements of a mesh (converged
+  between \texttt{NRMAX} = 240 and 480); the pressure parts of $BV_{1\r{e}}$ and $BV_{1\r{i}}$ keep a $\rho^3$
+  component of $n_\r{e}$ held by the local neoclassical electron fluxes, as with 0 (the electron potato width,
+  $\rho\approx0.002$, is far below the mesh; a regular $\rho\to0$ limit would need the finite-orbit inner solution of
+  the electrons).  Fluxes, energy balance, densities and ambipolarity agree with 0 to 3--4 digits; in the JT-60U case
+  with NBI at 1.5 s $T_\r{i}(0)$ is 0.43\% higher, $n_\r{e}(0)$ 0.29\% higher and the bootstrap current 0.43\% lower.
+  A Picard sweep costs 3.5--6.5\% more (\texttt{NRMAX} = 60, 120).  At \texttt{NRMAX} = 60 with NBI the axis
+  \texttt{LQ*8} mode above opens a window (1.31--1.335 s in the JT-60U case) in which the steps reach \texttt{ICMAX}
+  (with 0 they need 80--99 sweeps there); \texttt{NRETRY} = 1 takes them again (246 steps), all converge at $\Delta t/2$,
+  and the solution agrees with a run at $\Delta t/2$ to $10^{-6}$--$4\times10^{-5}$ before and after the window.
+  \texttt{imodel\_neo} is in the main record of the save file, so a file keeps the closure it was run with: a file
+  written before this change holds 0 and continues with the former matrix inversion (with the message
+  \texttt{Potato closure from the file: imodel\_neo(4) = 0 (was 1)}); give \texttt{imodel\_neo(4)} = 1 after
+  \texttt{LOAD} to continue it with the new closure.  New runs use 1.  Older executables read the new files and use 0.
+  JT-60U benchmark (3.2 MW, \texttt{FSRP} = 0, \texttt{NRMAX} = 60, 4 s), 0 against 1: line average 1.142 / 1.142
+  $\times10^{19}$ m$^{-3}$, $n_\r{e}(0)$ 1.724 / 1.728, $n_\r{i}(0)$ 1.218 / 1.228, $n_\r{z}(0)$ 1.93 / 1.85 $\times10^{17}$ m$^{-3}$,
+  $n_\r{b}/n_\r{i}(0)$ 0.32 / 0.32, $n_\r{e}$ at $\rho$ = 0.8, 0.95, 1.0 unchanged (0.68, 0.45, 0.33), $u_{\r{i}\phi}(0)$
+  439 / 438 km/s, $T_\r{i}(0)$ 7.85 / 7.88 keV, $T_\r{e}(0)$ 4.32 / 4.32 keV, bootstrap current 0.125 / 0.124 MA,
+  $W_\r{p}$ 1.088 MJ, ambipolarity $1.2\times10^{-6}$ in both; retried steps 2 / 246 (the window at 1.310--1.335 s),
+  one step of the initial transient not converged at $\Delta t/2$ in both.  With \texttt{imodel\_neo(4)} = 0 the
+  benchmark of the item on the production defaults above is reproduced bit for bit (all sweeps of the 40000 steps).
 \item Recycling at the main wall.  The radial ion outflow through the wall $\rho_b$,
   $\Gamma_s(\rho_b)^+ = \max(n_s\aves{\vec{u}_s\cdot\nabla V}, 0)$ at \texttt{NRMAX}, returns as a
   wall-side inflow of neutrals like the gas puff: \texttt{RWALL} (default 0.98) of the bulk ions

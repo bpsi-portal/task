@@ -25,6 +25,9 @@ After V5.62.00 (particle transport, wall, time stepping):
   RWALL = RWALLZ = RWALLIZ = 0
                   no recycling at the main wall       (now 0.98, 0.42, 0)
   NRETRY  = 0     no retry of an unconverged step     (now 1)
+  imodel_neo(4) = 0
+                  matrix inversion without the potato closure near the axis
+                                                      (now 1, orbit-averaged potato)
 
 Not restored by any input (implementation changes; the results differ slightly):
   - the constant term of the Tala momentum pinch is inward (V5.52: outward, a sign error
@@ -44,8 +47,8 @@ With NBI (3.2 + 0.4 MW) the densities and temperatures agree to 5-8%, but the co
 40% higher (pinch sign and V5.61 fast-ion fixes).  V5.52.20 itself, run with EPS = 1e-6, stalls
 on psi_t dot near the wall; with its default EPS = 1e-3 it does not.
 NANDER = 0 and RDltRPn = 2.4 (the former fixed value) are the V5.52 behaviour already.
-The save file stores FSTPTM (with FSVAHL and PNsSUP), so a run continued from a file keeps
-its closure.
+The save file stores FSTPTM (with FSVAHL and PNsSUP) and imodel_neo, so a run continued from
+a file keeps its closures.
 
  &tx
   FSLP    = 0.3d0
@@ -64,4 +67,5 @@ its closure.
   RWALLZ  = 0.d0
   RWALLIZ = 0.d0
   NRETRY  = 0
+  imodel_neo(4) = 0
  &end

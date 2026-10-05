@@ -898,13 +898,15 @@ contains
     imodel_neo(1) = 0 ! Fast ion viscosity
     imodel_neo(2) = 1 ! Required for NBCD
     imodel_neo(3) = 2 ! Fast ion contribution to friction forces
-    imodel_neo(4) = 0 ! Potato closure near the axis, valid only for nccoe (MDLNEO = 2)
-                      !   with imodel_neo(5) = 0:
-                      !   0: none (the banana-PS viscosity of each velocity as it is)
+    imodel_neo(4) = 1 ! Potato closure near the axis, valid only for nccoe (MDLNEO = 2)
+                      !   with imodel_neo(5) = 0 (otherwise no effect):
+                      !   0: none (the banana-PS viscosity of each velocity as it is;
+                      !      the default until 2026-10)
                       !   1: orbit-averaged potato: potato and potato-plateau branches in the
                       !      viscosity (xmu and through it the flows, ETA and BJBS), and in
                       !      ChiNC, D and gflux their radial step reflected at the axis,
                       !      K(s) = s(2-s) (Shaing, Hazeltine & Zarnstorff, PoP 4 (1997) 771)
+                      !   A save file keeps the value it was run with (0 in older files).
     imodel_neo(5) = 0 ! PS contribution nil when 1
     imodel_neo(6) = 3 ! Higher-order flow contribution, valid only for nccoe
 
