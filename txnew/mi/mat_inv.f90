@@ -1,9 +1,5 @@
 module matrix_inversion
   implicit none
-  ! Orbit-averaged potato closure (imodel_neo(4) = 1, see nccoe and potato_moments):
-  ! eps^2 of the node and the flag of the second (flux-side) nccoe pass
-  real(8), save :: pot_eps2 = 0.d0
-  logical, save :: pot_flux = .false.
 
 contains
 
@@ -31,6 +27,8 @@ contains
     real(8), dimension(:), allocatable :: PNsVL, PTsVL, amasL, achgL, sqzfac, xsta, coebdc
     real(8), dimension(:,:), allocatable :: ztau, coebsc, amat, bmat, cmat, dmat, alf, &
          & chipBP, chiTBP, chipPS, chiTPS, DpBP, DTBP, DpPS, DTPS, vohm
+    real(8), dimension(:,:), allocatable :: bmatf, cmatf, alff
+    logical :: lpot
 
 !!$    imodel(1) = 0 ! Fast ion viscosity
 !!$    imodel(2) = 1 ! Required for NBCD
@@ -39,6 +37,8 @@ contains
 !!$    imodel(5) = 0 ! PS contribution nil when 1
 !!$    imodel(6) = 3 ! Higher-order flow contribution, valid only for nccoe
     imodel(:) = imodel_neo(:)
+    ! Orbit-averaged potato closure (imodel_neo(4) = 1, nccoe only)
+    lpot = MDLNEOL == 2 .and. imodel(4) == 1 .and. imodel(5) == 0
 
     fbeam = 0.d0 ! 0: fast ion viscosity computed, 1: nil
 
@@ -137,9 +137,17 @@ contains
        MDLNEOLgflux = 1
     else ! if( MDLNEOL == 2 ) then
        !-- Call Matrix Inversion (nccoe)
-       call nccoe (coebsc,coencc,coebdc,amat,bmat,cmat,dmat,alf &
-            &     ,PNsVL,PTsVL,amasL,achgL,mxneo(NR),fmneo(1,NR),gamneo(NR),ftl,sqzfac,ztau &
-            &     ,NSM,ibeam,imodel,fbeam,midbg(1))
+       if( lpot ) then
+          ! also the flux-side bmat, cmat, alf of the orbit-averaged potato closure
+          allocate(bmatf,cmatf,alff,mold=amat)
+          call nccoe (coebsc,coencc,coebdc,amat,bmat,cmat,dmat,alf &
+               &     ,PNsVL,PTsVL,amasL,achgL,mxneo(NR),fmneo(1,NR),gamneo(NR),ftl,sqzfac,ztau &
+               &     ,NSM,ibeam,imodel,fbeam,midbg(1),epst(NR)**2,bmatf,cmatf,alff)
+       else
+          call nccoe (coebsc,coencc,coebdc,amat,bmat,cmat,dmat,alf &
+               &     ,PNsVL,PTsVL,amasL,achgL,mxneo(NR),fmneo(1,NR),gamneo(NR),ftl,sqzfac,ztau &
+               &     ,NSM,ibeam,imodel,fbeam,midbg(1))
+       end if
        MDLNEOLgflux = 2
     end if
 
@@ -298,16 +306,14 @@ contains
     end do
 
     !-- Orbit-averaged potato closure (imodel_neo(4) = 1): the flux side (ChiNC, D and gflux below)
-    !   comes from a second nccoe pass in which the potato part of the velocity-dependent viscosity
-    !   carries the reflecting random-walk factor K(s) of the orbit width (potato_moments).
-    !   xmu, lab, the flows, ETA and BJBS above keep the first pass.
-    if( MDLNEOL == 2 .and. imodel(4) == 1 .and. imodel(5) == 0 ) then
-       pot_eps2 = epst(NR)**2
-       pot_flux = .true.
-       call nccoe (coebsc,coencc,coebdc,amat,bmat,cmat,dmat,alf &
-            &     ,PNsVL,PTsVL,amasL,achgL,mxneo(NR),fmneo(1,NR),gamneo(NR),ftl,sqzfac,ztau &
-            &     ,NSM,ibeam,imodel,fbeam,midbg(1))
-       pot_flux = .false.
+    !   uses the force balance whose viscosity carries, in its potato part, the reflecting
+    !   random-walk factor K(s) of the orbit width (nccoe, potato_moments).  amat is common;
+    !   xmu, lab, the flows, ETA and BJBS above keep the viscosity without K.
+    if( lpot ) then
+       bmat = bmatf
+       cmat = cmatf
+       alf  = alff
+       deallocate(bmatf,cmatf,alff)
     end if
 
     !-- Neoclassical heat diffusivities
@@ -562,7 +568,7 @@ contains
     &             ,amat,bmat,cmat,dmat,alf &
     &             ,den,tem,mas,zz &
     &             ,mxneo,fmneo,gmneo,tpfneo,sqzfac,ztau &
-    &             ,ispc,ibeam,imodel,fbeam,idebug)
+    &             ,ispc,ibeam,imodel,fbeam,idebug,eps2pot,bmatf,cmatf,alff)
 !=======================================================================
 !
 !     neoclassical coefficients for bootstrap current etc.
@@ -599,6 +605,9 @@ contains
 !     cmat : (L - M)^{-1}_ab
 !     dmat : L * [(L - M)^{-1}M]_ab
 !     alf  : [(L - M)^{-1}M]_ab
+!     bmatf, cmatf, alff (optional, with the potato closure imodel(4) = 1):
+!            bmat, cmat, alf of the flux side, whose viscosity carries the
+!            factor K(s) in its potato part (potato_moments)
 !
 !   << INPUT >>
 !     den(i)   (i=1,ispc+ibeam)  :  density      den(1) ele. [arb.]
@@ -618,6 +627,7 @@ contains
 !     fbeam   :  factor for beam viscosity
 !                       { fbeam=0 -->  full viscosity  }
 !     idebug  :  debug option
+!     eps2pot (optional) : eps^2 of the node; its presence asks for bmatf, cmatf, alff
 !
 !     imodel(6) = 0: approximate coll. operator + 2nd moment
 !               = 1: full        coll. operator + 2nd moment
@@ -640,6 +650,8 @@ contains
     real(8), intent(out) :: coebsc(:,:), coencc, coebdc(:) &
          &        , amat(:,:), bmat(:,:), cmat(:,:), dmat(:,:) &
          &        , alf(:,:)
+    real(8), intent(in), optional :: eps2pot
+    real(8), intent(out), optional :: bmatf(:,:), cmatf(:,:), alff(:,:)
 !:: local
     real(8), allocatable :: lab(:,:,:,:), mab(:,:,:,:), nab(:,:,:,:), vt(:), vtn(:), xmu(:,:,:)
     real(8), allocatable :: alph(:,:,:), alphhat(:,:,:), emat(:,:), fmat(:,:) &
@@ -662,8 +674,9 @@ contains
     real(8) :: epsab, c2, f, alp, barK1, barK2, barK2mod &
          &   , c1, c1a, c3
     real(8) :: funp, fundp
-    real(8) :: potl, potb, cpo1, c4pot, pk11, pk12, pk22
-    logical :: lpot
+    real(8), allocatable :: xmuf(:,:,:)
+    real(8) :: potl, potb, cpo1, c4pot, pk11, pk12, pk22, fk11, fk12, fk22, eps2
+    logical :: lpot, lflux
     integer :: i, i1, i2, i3, ib, ill, is, isp, isp2, ivmax &
          &   , j, j1, j2, js, k, m
 !    integer, allocatable :: ipiv(:)
@@ -1339,15 +1352,24 @@ contains
 !   viscosity coeff for bulk particles
 !=======================================================================
     ! Potato closure (imodel(4) = 1, with the default PS treatment imodel(5) = 0): the velocity
-    ! moments below are replaced by those of potato_moments, in which the potato and potato-plateau
-    ! branches (Shaing et al. PoP 3 (1996) 965; Shaing & Hazeltine PoP 4 (1997) 4331) join the
-    ! banana-PS viscosity of each velocity.  potl = q(0) R(0), potb = kappa(0) B_t(0)/(2 q(0)^2),
-    ! cpo1 = 3 (2.19)/2^(3/2) is the potato coefficient of NCLASS.
+    ! moments come from potato_moments instead of the loop below; there the potato and
+    ! potato-plateau branches (Shaing et al. PoP 3 (1996) 965; Shaing & Hazeltine PoP 4 (1997)
+    ! 4331) join the banana-PS viscosity of each velocity.  potl = q(0) R(0),
+    ! potb = kappa(0) B_t(0)/(2 q(0)^2), cpo1 = 3 (2.19)/2^(3/2) is the potato coefficient of NCLASS.
+    ! With eps2pot present, the same velocity loop also gives the moments of the flux side
+    ! (xmuf; K(s) in the potato part), and bmatf, cmatf, alff are solved with them below.
     lpot = imodel(4) == 1 .and. imodel(5) == 0
+    lflux = lpot .and. present(eps2pot)
     if(lpot) then
        potl = Q(0) * sqrt(rrt(0))
        potb = elip(0) * fipol(0) / sqrt(rrt(0)) / (2.d0 * Q(0)**2)
        cpo1 = 3.d0 * 2.19d0 / 2.d0**1.5d0
+       eps2 = 0.d0
+       if(lflux) eps2 = eps2pot
+    end if
+    if(lflux) then
+       allocate(xmuf(isp,2,2))
+       xmuf = 0.d0
     end if
     do i1=1,ispc
        xke11=0.d0
@@ -1355,75 +1377,76 @@ contains
        xke22=0.d0
        if(lpot) c4pot = zmas(i1) * vt(i1) / (abs(zz(i1)) * cnec * potb * potl)
        dx=vxmax/ivmax
-       do i=1,ivmax
-          xa=dx*i-0.5d0*dx
-          xa3=xa**3
-          xa2=xa**2
-          zmud=0.d0
-          zmut=0.d0
-          do i2=1,ispc
-             xb=xa*vt(i1)/vt(i2)
-             xb2=xb**2
-             if(xb < 5.922d0) then ! above this value, fp is always 1 in double precision.
-                fp=erf(xb)
-                fdp=2.d0/sqrt(cnpi)*exp(-xb**2) ! derivative of erf
+       if(.not. lpot) then
+          do i=1,ivmax
+             xa=dx*i-0.5d0*dx
+             xa3=xa**3
+             xa2=xa**2
+             zmud=0.d0
+             zmut=0.d0
+             do i2=1,ispc
+                xb=xa*vt(i1)/vt(i2)
+                xb2=xb**2
+                if(xb < 5.922d0) then ! above this value, fp is always 1 in double precision.
+                   fp=erf(xb)
+                   fdp=2.d0/sqrt(cnpi)*exp(-xb**2) ! derivative of erf
+                else
+                   fp=1.d0
+                   fdp=0.d0
+                endif
+                gfun=(fp-xb*fdp)/(2.d0*xb2) ! Chandrasekhar function
+                xtab=1.d0/ztau(i1,i2)
+                zmud=zmud+xtab*(fp-gfun)/xa3
+                zmut=zmut+xtab*((fp-3.d0*gfun)/xa3 &
+                     & +4.d0*(tem(i1)/tem(i2)+(vt(i1)/vt(i2))**2)*gfun/xa)
+             enddo
+             zmud=zmud*zp43
+             zkb=xgt*zmud/sqzfac(i1)**1.5d0
+             zmut=zmut*zp43
+             zkps=0.d0
+             do m=1,mxneo
+                fm=dfloat(m)
+                zomg=xa*vt(i1)*fm*gmneo
+                zu=zmut/zomg
+                zu2=zu*zu
+                zui=1.d0/zu
+                zat=datan(zui)
+                zmui=-1.5d0*zu2-4.5d0*zu2*zu2 &
+                     & +(0.25d0+(1.5d0+2.25d0*zu2)*zu2)*2.d0*zu*zat
+                if(zu.gt.100.d0)zmui=0.4d0
+                zkps=zkps+fmneo(m)*zmui
+             enddo
+             zkps=1.5d0*(vt(i1)*xa)**2*zkps/zmut
+   !-----
+   !         zkps becomes zero at axis because fmneo becomes zero despite finite zmui.
+   !         On the other hand, zkb is still finite at axis only if the potate orbit effect
+   !         is taken into account. In short, the trapped particle fraction f_t becomes zero 
+   !         unless the potate orbit effect is taken into account, leading to zkb being zero, 
+   !         but in fact f_t remains finite even at axis.
+   !
+   !         For such a case, the following form of zk unfavorably goes to zero.
+   !         To avoid this, finite fmneo is given even at axis.
+   !
+             if( zkb+zkps /= 0.d0 ) then
+                zk=zkb*zkps/(zkb+zkps)
              else
-                fp=1.d0
-                fdp=0.d0
-             endif
-             gfun=(fp-xb*fdp)/(2.d0*xb2) ! Chandrasekhar function
-             xtab=1.d0/ztau(i1,i2)
-             zmud=zmud+xtab*(fp-gfun)/xa3
-             zmut=zmut+xtab*((fp-3.d0*gfun)/xa3 &
-                  & +4.d0*(tem(i1)/tem(i2)+(vt(i1)/vt(i2))**2)*gfun/xa)
+                zk=0.d0
+             end if
+   !          if(i1==1) write(6,'(4ES15.7)') xa,tpfneo,zkb,zkps
+             if(imodel(5).eq. 1)zk=zkb
+             if(imodel(5).eq.-1)zk=zkps
+   !-----
+             yk0=zk*dexp(-xa2)*xa2*xa2
+             yk1=yk0*xa2
+             yk2=yk1*xa2
+             xke11=xke11+yk0
+             xke12=xke12+yk1
+             xke22=xke22+yk2
           enddo
-          zmud=zmud*zp43
-          zkb=xgt*zmud/sqzfac(i1)**1.5d0
-          zmut=zmut*zp43
-          zkps=0.d0
-          do m=1,mxneo
-             fm=dfloat(m)
-             zomg=xa*vt(i1)*fm*gmneo
-             zu=zmut/zomg
-             zu2=zu*zu
-             zui=1.d0/zu
-             zat=datan(zui)
-             zmui=-1.5d0*zu2-4.5d0*zu2*zu2 &
-                  & +(0.25d0+(1.5d0+2.25d0*zu2)*zu2)*2.d0*zu*zat
-             if(zu.gt.100.d0)zmui=0.4d0
-             zkps=zkps+fmneo(m)*zmui
-          enddo
-          zkps=1.5d0*(vt(i1)*xa)**2*zkps/zmut
-!-----
-!         zkps becomes zero at axis because fmneo becomes zero despite finite zmui.
-!         On the other hand, zkb is still finite at axis only if the potate orbit effect
-!         is taken into account. In short, the trapped particle fraction f_t becomes zero 
-!         unless the potate orbit effect is taken into account, leading to zkb being zero, 
-!         but in fact f_t remains finite even at axis.
-!
-!         For such a case, the following form of zk unfavorably goes to zero.
-!         To avoid this, finite fmneo is given even at axis.
-!
-          if( zkb+zkps /= 0.d0 ) then
-             zk=zkb*zkps/(zkb+zkps)
-          else
-             zk=0.d0
-          end if
-!          if(i1==1) write(6,'(4ES15.7)') xa,tpfneo,zkb,zkps
-          if(imodel(5).eq. 1)zk=zkb
-          if(imodel(5).eq.-1)zk=zkps
-!-----
-          yk0=zk*dexp(-xa2)*xa2*xa2
-          yk1=yk0*xa2
-          yk2=yk1*xa2
-          xke11=xke11+yk0
-          xke12=xke12+yk1
-          xke22=xke22+yk2
-       enddo
-       if(lpot) then
+       else
           ! arguments by value (expressions) so that no address of the loop's locals escapes
           call potato_moments((i1),(ispc),(ivmax),(dx),vt,tem,ztau,(sqzfac(i1)),(xgt),(mxneo),fmneo,(gmneo), &
-               &              (c4pot),(cpo1),(potl),(zp43),pk11,pk12,pk22)
+               &              (c4pot),(cpo1),(potl),(zp43),(lflux),(eps2),pk11,pk12,pk22,fk11,fk12,fk22)
           xke11 = pk11
           xke12 = pk12
           xke22 = pk22
@@ -1439,6 +1462,15 @@ contains
        xmu(i1,1,2)=2.5d0*xke11-xke12
        xmu(i1,2,1)=xmu(i1,1,2)
        xmu(i1,2,2)=25.d0/4.d0*xke11-5.d0*xke12+xke22
+       if(lflux) then
+          fk11 = fk11 * xfac
+          fk12 = fk12 * xfac
+          fk22 = fk22 * xfac
+          xmuf(i1,1,1)=fk11
+          xmuf(i1,1,2)=2.5d0*fk11-fk12
+          xmuf(i1,2,1)=xmuf(i1,1,2)
+          xmuf(i1,2,2)=25.d0/4.d0*fk11-5.d0*fk12+fk22
+       end if
     enddo
     do i1 = ispc+1, isp
        xmu(i1,1,1) = 0.0d0
@@ -1586,6 +1618,8 @@ contains
 !<<dummy set for parallel thermal friction>>
           lab(ib,ib,2,2)=1.d0
        enddo
+       ! the beam viscosity has no potato part
+       if(lflux) xmuf(ispc+1:isp,:,:) = xmu(ispc+1:isp,:,:)
     endif
 !=======================================================================
 !<amat>
@@ -1739,6 +1773,27 @@ contains
        enddo
     enddo
 !=======================================================================
+!     flux side of the potato closure: bmat, cmat and alf as above with xmuf
+!=======================================================================
+    if(lflux) then
+       bmatf=amat
+       do i1=1,isp
+          bmatf(i1    ,i1    )=bmatf(i1    ,i1    )-xmuf(i1,1,1)
+          bmatf(i1    ,i1+isp)=bmatf(i1    ,i1+isp)-xmuf(i1,1,2)
+          bmatf(i1+isp,i1    )=bmatf(i1+isp,i1    )-xmuf(i1,2,1)
+          bmatf(i1+isp,i1+isp)=bmatf(i1+isp,i1+isp)-xmuf(i1,2,2)
+       enddo
+       call matslv(isp2,isp2,bmatf,cmatf,err,ill)
+       bmatf=0.d0
+       do i1=1,isp
+          bmatf(i1    ,i1    )=xmuf(i1,1,1)
+          bmatf(i1    ,i1+isp)=xmuf(i1,1,2)
+          bmatf(i1+isp,i1    )=xmuf(i1,2,1)
+          bmatf(i1+isp,i1+isp)=xmuf(i1,2,2)
+       enddo
+       forall (i1=1:isp2,i2=1:isp2) alff(i1,i2)=sum(cmatf(i1,:)*bmatf(:,i2))
+       deallocate(xmuf)
+    end if
 
     deallocate(zmas,zast)
     deallocate(alph,alphhat,emat,fmat,delt,hs_transition)
@@ -1748,7 +1803,7 @@ contains
 
 !=======================================================================
   subroutine potato_moments(i1,ispc,ivmax,dx,vt,tem,ztau,sqz,xgt,mxneo,fmneo,gmneo, &
-       &                    c4pot,cpo1,potl,zp43,xke11,xke12,xke22)
+       &                    c4pot,cpo1,potl,zp43,lflux,eps2,xke11,xke12,xke22,fke11,fke12,fke22)
 !=======================================================================
 !   Velocity moments xke11/12/22 of the viscosity of species i1 with the potato closure
 !   (imodel_neo(4) = 1), on the velocity grid of nccoe (x = v/v_t):
@@ -1764,21 +1819,24 @@ contains
 !     the resonant orbits have r_res ~ nu*^(-1/3) r_p)
 !     k_hp  = H(k_po, k_p),  k = w k_hp + (1-w) k_MI,  w = k_hp^3/(k_hp^3 + k_MI^3)
 !
-!   Second (flux-side) pass (pot_flux): the potato part k_hp is multiplied by
+!   Flux side (lflux; moments fke11/12/22): the potato part k_hp is multiplied by
 !     K(s) = s (2 - s) for s < 1, 1 for s >= 1,  s = eps^2/Delta(eps^2),
 !     Delta(eps^2) = (x c4)^(4/3) (1+nu*_pot)^(-2/3),
 !   the flux of a random walk in psi whose step is the orbit width (Shaing, Hazeltine &
 !   Zarnstorff, PoP 4 (1997) 771, Sec. VI and Eq. 73) reflected at the axis psi = 0, relative
-!   to the local diffusion law.  The weight w keeps the value of the first pass.
+!   to the local diffusion law.  The weight w is the one without K.
 !=======================================================================
     use tx_commons, only : cnpi => Pi
     integer(4), intent(in) :: i1, ispc, ivmax, mxneo
-    real(8), intent(in) :: dx, vt(:), tem(:), ztau(:,:), sqz, xgt, fmneo(10), gmneo, c4pot, cpo1, potl, zp43
-    real(8), intent(out) :: xke11, xke12, xke22
+    real(8), intent(in) :: dx, vt(:), tem(:), ztau(:,:), sqz, xgt, fmneo(10), gmneo, c4pot, cpo1, potl, zp43, eps2
+    logical, intent(in) :: lflux
+    real(8), intent(out) :: xke11, xke12, xke22, fke11, fke12, fke22
     integer(4) :: iv, j2, mm
-    real(8) :: x1, x2, x3, y, y2, p, pd, g, tb, nd, nt, kb, kps, k, u, u2, mui, kpo, kpp, hp, w, st, s, e0, e1, e2
+    real(8) :: x1, x2, x3, y, y2, p, pd, g, tb, nd, nt, kb, kps, k, u, u2, mui, kpo, kpp, hp, w, st, s, e0, e1, e2, &
+         &     hf, kf, f0, f1, f2
 
     xke11 = 0.d0 ; xke12 = 0.d0 ; xke22 = 0.d0
+    fke11 = 0.d0 ; fke12 = 0.d0 ; fke22 = 0.d0
     do iv = 1, ivmax
        x1 = dx * iv - 0.5d0 * dx
        x3 = x1**3
@@ -1832,10 +1890,18 @@ contains
        kpp = kpp * (1.d0 + st)**(-2.d0/3.d0) * mui / (0.25d0 * cnpi * u)
        hp = kpo * kpp / (kpo + kpp)
        w = hp**3 / (hp**3 + k**3)
-       if(pot_flux) then
+       if(lflux) then
           ! reflecting random walk in psi with the orbit width as step
-          s = pot_eps2 / ((x1 * c4pot)**(4.d0/3.d0) * (1.d0 + st)**(-2.d0/3.d0))
-          if(s < 1.d0) hp = hp * s * (2.d0 - s)
+          hf = hp
+          s = eps2 / ((x1 * c4pot)**(4.d0/3.d0) * (1.d0 + st)**(-2.d0/3.d0))
+          if(s < 1.d0) hf = hp * s * (2.d0 - s)
+          kf = w * hf + (1.d0 - w) * k
+          f0 = kf * exp(-x2) * x2 * x2
+          f1 = f0 * x2
+          f2 = f1 * x2
+          fke11 = fke11 + f0
+          fke12 = fke12 + f1
+          fke22 = fke22 + f2
        end if
        k = w * hp + (1.d0 - w) * k
        e0 = k * exp(-x2) * x2 * x2
