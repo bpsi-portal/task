@@ -124,8 +124,11 @@ contains
     logical :: stepfail
     ! NRETRY summary: a warning when more than RETRYWARN of the steps of a run needed a retry
     real(8), parameter :: RETRYWARN = 0.1d0
-    real(8) :: DTfull, Tstart
-    real(8), dimension(:,:), allocatable :: Xstart
+    ! largest DT / bdf_history_dt kept in the variable-step BDF2 (zero-stable below 1 + sqrt(2))
+    real(8), parameter :: OMEGAMAX = 2.d0
+    real(8) :: DTfull, Tstart, DTprev0
+    real(8), dimension(:,:), allocatable :: Xstart, XOLDstart
+    logical :: history0
     ! --- adaptive under-relaxation ---------------------------------------
     !  Below dt ~ 3e-6 the fixed-point map for the radial flows stops
     !  contracting.  It does not blow up: the sweep increment simply sits at
@@ -226,15 +229,16 @@ contains
     ! Save X -> XP -> XOLD for BDF only when there is no X(t-dt) to lean on.
     ! A RUN starts from scratch; a CONT continues with the history it has.
     if(T_TX == 0.d0) bdf_history_ready = .false.
-    ! XOLD belongs to the step size it was taken with.  The weights used here are
-    ! the fixed-step BDF2 ones, so carrying the history across a change of DT --
-    ! which is what P followed by C does -- is not BDF2 at all.  Measured on the
-    ! standard case, stepping to t = 1e-3 as 100 steps of 1e-7 then 79 of 1.25e-5
-    ! lands 2.0e-4 from a fine reference when the history is carried over and
-    ! 5.3e-6 when it is not, against 1.6e-5 for a uniform 1.25e-5.  Take one
-    ! backward-Euler step at the change instead; its O(dt^2) local error, once,
-    ! leaves the order alone.
-    if(DT /= bdf_history_dt) bdf_history_ready = .false.
+    ! XOLD belongs to the step size it was taken with, bdf_history_dt.  After a
+    ! change of DT (P followed by C) the first step uses the variable-step BDF2
+    ! weights of bdf2_weights with omega = DT / bdf_history_dt.  The two-step
+    ! formula is zero-stable only for omega < 1 + sqrt(2), and its error constant
+    ! grows with omega, so a larger increase of DT takes one backward-Euler step
+    ! instead; its O(dt^2) local error, once, leaves the order alone.  (With the
+    ! fixed-step weights, which were used before, stepping the standard case to
+    ! t = 1e-3 as 100 steps of 1e-7 then 79 of 1.25e-5 landed 2.0e-4 from a fine
+    ! reference, against 5.3e-6 with the backward-Euler step.)
+    if(DT > OMEGAMAX * bdf_history_dt) bdf_history_ready = .false.
     if(IGBDF /= 0 .and. .not. bdf_history_ready) XOLD = X
 
     L_NTDO:do NTDO = 1, NTMAX
@@ -567,13 +571,17 @@ contains
 
        ! NRETRY = k > 0: a step (or substep) whose Picard iteration reached ICMAX without
        ! converging is taken again from the start of the step as twice as many substeps,
-       ! down to DT/2**k; the first substep is backward Euler (no history at the new size),
-       ! the others BDF2.  Afterwards the BDF2 history is X(t - DT) again, so the next step
-       ! is an ordinary one.  Converged steps are not touched.
+       ! down to DT/2**k.  The first substep is a variable-step BDF2 step on the history
+       ! of the step, X(t - DTprev) and X(t) (omega = DT/2**j / DTprev), or backward
+       ! Euler where the step itself had none; the others are BDF2 at the substep size.
+       ! Afterwards the BDF2 history is X(t - DT) again, so the next step is an ordinary
+       ! one.  Converged steps are not touched.
        if(IC >= ICMAX .and. nsub < 2**NRETRY) then
           if(nsub == 1) then
              nretried = nretried + 1
              DTfull = DT ; Tstart = T_TX - DT ; Xstart = X
+             history0 = bdf_history_ready ; DTprev0 = bdf_history_dt
+             if(IGBDF /= 0 .and. history0) XOLDstart = XOLD
           else   ! back to the start of the step, with its previous-time values (pres0, ErV0)
              X = Xstart
              call TXCALV(X,1)
@@ -584,8 +592,14 @@ contains
           DT = DTfull / nsub
           if(IDIAGL >= 1) write(6,'(A,I6,A,ES10.3)') ' ## Picard not converged at NT =', NT, &
                & ': retried as steps of', DT
-          bdf_history_ready = .false.
-          if(IGBDF /= 0) XOLD = X
+          bdf_history_ready = history0 ; bdf_history_dt = DTprev0
+          if(IGBDF /= 0) then
+             if(history0) then
+                XOLD = XOLDstart
+             else
+                XOLD = X
+             end if
+          end if
           cycle L_SUB
        end if
        if(NRETRY > 0 .and. IC >= ICMAX) stepfail = .true.   ! not converged at DT/2**NRETRY either
@@ -886,12 +900,11 @@ contains
   subroutine TXCALB(BA,BL,BX)
 
     use tx_commons, only : IGBDF, ADV, MDLPCK, NQMAX, NRMAX, NLC, NLCR, CLC, BLC, ALC, NLCMAX, &
-         &              PLC, X, XOLD, bdf_history_ready!, lqb1, pnbv
+         &              PLC, X, XOLD, bdf_history_ready, bdf_history_dt, DT!, lqb1, pnbv
     real(8), dimension(:,:), intent(inout) :: BA, BL
     real(8), dimension(:), intent(inout) :: BX
     INTEGER(4) :: J, NR, NQ, NC, NC1, IA, IB, IC, NCHvs, NC1Hvs, NC1Hvs2, NC2
     INTEGER(4) :: JA, JB, JC, KL
-    real(8), parameter :: C43 = 4.d0/3.d0, C23 = 2.d0/3.d0, C13 = 1.d0/3.d0
     real(8) :: COEF1, COEF2, COEF3, COEF!, suml1,suml2
     
     ! The two-step BDF needs a genuine X(t-dt).  Where there is none, XOLD has
@@ -901,11 +914,12 @@ contains
     ! second order.  Take one backward-Euler step instead: its O(dt^2) local
     ! error, once, leaves the order alone.
     if(IGBDF /= 0) then
-       if(bdf_history_ready) then
-          ADV = C23
-       else
-          ADV = 1.d0
-       end if
+       call bdf2_weights(bdf_history_ready, DT, bdf_history_dt, COEF1, COEF2, COEF3)
+       ADV = COEF3
+    else
+       COEF1 = 1.d0
+       COEF2 = 0.d0
+       COEF3 = 1.d0
     end if
 
     !  NR : number of radial mesh 
@@ -1120,16 +1134,6 @@ contains
     ! *** Right-hand-side vector, denoted by "bu" ***
 
     BX = 0.d0 ! initialize BX array
-
-    if(IGBDF == 0 .or. .not. bdf_history_ready) then
-       COEF1 = 1.d0
-       COEF2 = 0.d0
-       COEF3 = 1.d0
-    else
-       COEF1 = C43
-       COEF2 = C13
-       COEF3 = C23
-    end if
 
     ! In the case of NC=0 i.e. time derivative term effects in any equations
 !!$    NC = 0
@@ -1898,7 +1902,7 @@ contains
 !   formed offline.
 
     use tx_commons, only : NTMAX, BLC, ALC, CLC, PLC, NLC, NLCR, NLCMAX, NCM, &
-         &                  ADV, IGBDF, DT, bdf_history_ready, X, vv, rho, ICMAX
+         &                  ADV, IGBDF, DT, bdf_history_ready, bdf_history_dt, X, vv, rho, ICMAX
 
     real(8), dimension(:,:), intent(in) :: BL
     real(8), dimension(:), intent(in) :: BX
@@ -1906,7 +1910,7 @@ contains
     logical, intent(in), optional :: final
 
     integer(4) :: n, kl, ku, ldab, io
-    real(8) :: coef1
+    real(8) :: coef1, coef2, coef3
     logical :: islast
     character(len=32) :: fname
 
@@ -1922,7 +1926,7 @@ contains
     ku   = kl
     ldab = size(BL,1)
     coef1 = 1.d0
-    if(IGBDF /= 0 .and. bdf_history_ready) coef1 = 4.d0 / 3.d0
+    if(IGBDF /= 0) call bdf2_weights(bdf_history_ready, DT, bdf_history_dt, coef1, coef2, coef3)
 
     open(newunit=io, file=trim(fname), status='replace', &
          & form='unformatted', access='stream')
@@ -2349,5 +2353,44 @@ contains
     end if
 
   end subroutine CHECK_CONVERGENCE
+
+!*********************************************************************************
+!
+!   Weights of the two-step BDF for a step dt that follows a step dtprev
+!
+!   With omega = dt / dtprev, differentiating the quadratic through
+!   (t_{n-1}, y_{n-1}), (t_n, y_n), (t_{n+1}, y_{n+1}) at t_{n+1} gives
+!     (1+2 omega)/(1+omega) y_{n+1} - (1+omega) y_n + omega**2/(1+omega) y_{n-1}
+!        = dt f(y_{n+1}),
+!   written as y_{n+1} - c1 y_n + c2 y_{n-1} = c3 dt f(y_{n+1}) with
+!     c1 = (1+omega)**2/(1+2 omega), c2 = omega**2/(1+2 omega), c3 = (1+omega)/(1+2 omega);
+!   omega = 1 gives 4/3, 1/3, 2/3.  The local error is second order for any omega;
+!   the formula is zero-stable for omega < 1 + sqrt(2) (TXLOOP keeps omega <= OMEGAMAX).
+!   Without a history (ready = .false.) the step is backward Euler, c1 = c3 = 1, c2 = 0.
+!   A step of the same size as the history takes the constants themselves, so that
+!   a run with a fixed DT stays bit-identical.
+!
+!*********************************************************************************
+
+  pure subroutine bdf2_weights(ready, dt, dtprev, c1, c2, c3)
+
+    logical, intent(in)  :: ready
+    real(8), intent(in)  :: dt, dtprev
+    real(8), intent(out) :: c1, c2, c3
+    real(8), parameter :: C43 = 4.d0/3.d0, C23 = 2.d0/3.d0, C13 = 1.d0/3.d0
+    real(8) :: w
+
+    if(.not. ready) then
+       c1 = 1.d0 ; c2 = 0.d0 ; c3 = 1.d0
+    else if(dt == dtprev) then
+       c1 = C43 ; c2 = C13 ; c3 = C23
+    else
+       w  = dt / dtprev
+       c1 = (1.d0 + w)**2 / (1.d0 + 2.d0 * w)
+       c2 = w**2 / (1.d0 + 2.d0 * w)
+       c3 = (1.d0 + w) / (1.d0 + 2.d0 * w)
+    end if
+
+  end subroutine bdf2_weights
 
 end module tx_main
