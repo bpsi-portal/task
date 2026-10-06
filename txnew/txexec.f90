@@ -2213,12 +2213,12 @@ contains
 
   subroutine check_convergence(IC,IDIV,istat)
     use tx_commons, only : MODECV, NRMAX, NQMAX, EPS, IDIAG, NT, ICMAX, &
-         &                 LQm2, LQm5, ADV, DT, rMU0
+         &                 LQm2, LQm3, LQm4, LQm5, ADV, DT, rMU0, rMUb2
 
     integer(4), intent(in)  :: IC, IDIV
     integer(4), intent(out) :: istat
     integer(4) :: NR, NQ, NRAVM, IDISP, IDIAGL
-    real(8) :: EPSabs, AV, AVM, ERR1, FLOORm2
+    real(8) :: EPSabs, AV, AVM, ERR1, FLOORm2, FLOORm3
     ! The increment of psi_t dot (LQm2) has a rounding floor that no iteration
     ! removes.  psi_t is mostly vacuum flux, so in Ampere's law (the LQm2 row)
     ! the rot B_phi term is a cancellation of terms larger than itself by a
@@ -2236,11 +2236,27 @@ contains
     ! the compiler, the BLAS or the order of operations; 1 is three to four
     ! times it.
     real(8), parameter :: CRNDm2 = 1.0d0
+    ! psi dot (LQm3) has the same floor through psi (LQm4).  psi is fixed by the
+    ! rot B_theta term of Ampere's law (the LQm3 row), again a second difference
+    ! whose terms are larger than their sum by ~ NRMAX**2, so psi is determined
+    ! only to a relative ~ eps_mach NRMAX**2.  Faraday's law (the LQm4 row) gives
+    ! psi dot = - rMUb2 (X4 - X4_old) / (ADV DT), so the increment of X3 is
+    ! rMUb2 / (ADV DT) times that of X4: the floor is
+    ! CRNDm3 eps_mach NRMAX**2 rMUb2 RMS(X4) / (ADV DT), relative to RMS(X3)
+    ! eps_mach NRMAX**2 tau_psi / (ADV DT) with tau_psi = psi / psi dot, which
+    ! grows as the loop voltage relaxes.  Measured (N240, standard NBI, 0.2 s,
+    ! DT = 1e-4 to 5e-6): the X3 increments are exactly rMUb2 / (ADV DT) times the
+    ! X4 increments, and those stop at 0.005-0.5 eps_mach NRMAX**2 RMS(X4).
+    ! CRNDm3 = 1 is the same safety factor as CRNDm2.  X4 itself, and every other
+    ! variable, are tested against EPS as before.
+    real(8), parameter :: CRNDm3 = 1.0d0
 
     IDIAGL = mod(IDIAG,10)
     EPSabs = abs(EPS)
     FLOORm2 = CRNDm2 * epsilon(1.d0) * dble(NRMAX)**2 &
          &  * rMU0 * sqrt(SUM(XN(:,LQm5)**2) / NRMAX) / (ADV * DT)
+    FLOORm3 = CRNDm3 * epsilon(1.d0) * dble(NRMAX)**2 &
+         &  * rMUb2 * sqrt(SUM(XN(:,LQm4)**2) / NRMAX) / (ADV * DT)
 
     if(MODECV == 0) then
 
@@ -2263,6 +2279,8 @@ contains
           if(NQ == LQm2) then
              ! the part of the increment above the rounding floor
              ASG(:,NQ) = max(0.d0, abs(XN(:,NQ) - XP(:,NQ)) - FLOORm2) / AV
+          else if(NQ == LQm3) then
+             ASG(:,NQ) = max(0.d0, abs(XN(:,NQ) - XP(:,NQ)) - FLOORm3) / AV
           else
              ASG(:,NQ) = abs(XN(:,NQ) - XP(:,NQ)) / AV
           end if
