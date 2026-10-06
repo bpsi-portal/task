@@ -3570,7 +3570,8 @@ either case.
   axis becomes negative at 0.86 s even with \texttt{NRETRY} = 1.  The continuum solution is regular.
 \item Potato closure near the magnetic axis, \texttt{imodel\_neo(4)} (default 1 since 2026-10; this element of
   \texttt{imodel\_neo} was unused before).  The matrix inversion (\texttt{MDLNEO} = 2) takes the viscosity of each
-  velocity as the harmonic mean of its banana and Pfirsch--Schl\"uter values.  Near the axis the share of the fast
+  velocity as $k_\r{b}k_\r{ps}/(k_\r{b}+k_\r{ps})$ of its banana and Pfirsch--Schl\"uter values (the smaller one
+  dominates; half their harmonic mean).  Near the axis the share of the fast
   tail limited by the banana value changes with $\varepsilon$ ($f_\r{t}\propto\sqrt\varepsilon$), and the poloidal
   momentum balance, which fixes the poloidal flow algebraically at each radius, carried this into $BV_1$ and $\Phi$:
   they were not analytic in $V$ inside $\rho\approx0.05$, which for the thermal ions lies inside their potato width

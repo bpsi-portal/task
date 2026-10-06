@@ -80,8 +80,9 @@ contains
        !
        !     Note on what this actually reaches.  Since the Pfirsch-Schlueter
        !     Fourier factors take their analytic axis limit fmneo(:,0) = 0,
-       !     zkps(0) = 0, and nccoe's default harmonic mean
-       !     zk = zkb*zkps/(zkb+zkps) is zero whatever zkb is.  So for
+       !     zkps(0) = 0, and nccoe's default combination
+       !     zk = zkb*zkps/(zkb+zkps) (the inverse of the sum of the inverses,
+       !     half the harmonic mean) is zero whatever zkb is.  So for
        !     MDLNEO = 2 with imodel_neo(5) = 0 (the default) or -1 these two
        !     lines have no effect on the solution at all - verified to be
        !     bit-identical with epsL = ftl = 0.  They do matter for
