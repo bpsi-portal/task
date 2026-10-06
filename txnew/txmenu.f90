@@ -106,6 +106,9 @@ contains
        case('P')
           call TXPARM(KID)
           if(KID == 'Q') exit
+          ! the same checks, and the same PNsSUP(2:3) of MDLNSUP = 1, as for the
+          ! parameter file and a namelist typed at the prompt
+          call TXPARM_CHECK
        case('V')
           call TXVIEW
        case('I')

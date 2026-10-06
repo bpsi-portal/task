@@ -3647,6 +3647,19 @@ either case.
 \item Diagnostic switches, off by default: \texttt{iaxproj} (near-axis
   regularity projection), \texttt{Dnfac} (particle diffusion in the impurity
   continuity equation).
+\item Input handling.  A namelist entered after \texttt{P} at the prompt is checked and
+  processed like the parameter file and a namelist typed at the prompt; before, it bypassed
+  the input checks and the derivation of \texttt{PNsSUP(2:3)} by \texttt{MDLNSUP} = 1.
+  \texttt{FSTPTM} must be an integer from 0 to 4 (a value such as 2.5 was taken by the
+  branches of the coefficients for one of the options).  The centre and width of the Gaussian
+  modification \texttt{PROFD2} of the particle diffusivity, constants 0.99 and 0.07 before, are
+  the inputs \texttt{PROFD2C} and \texttt{PROFD2W} with the same defaults, kept in a fourth
+  extension record of the save file.  \texttt{V} lists every namelist input (\texttt{NRETRY},
+  \texttt{NANDER}, \texttt{MDLNSUP}, \texttt{MDLN0FL} and others were missing, and
+  \texttt{rNRFi} showed the value of \texttt{rNRFe}).  In the first steps of a cold start the
+  slow neutrals have not reached the wall and the edge of the $n_{02}$ source region came from
+  $0/0$, i.e.\ from comparisons with NaN; it now stays at the separatrix by an explicit test.
+  Default runs are bit-identical.
 \end{itemize}
 
 \begin{thebibliography}{9}

@@ -304,6 +304,10 @@ contains
     !   Gaussian modification of particle diffusion coefficient profile
     PROFD2 = 0.d0
 
+    !   Centre (rho) and width of the Gaussian modification PROFD2
+    PROFD2C = 0.99d0
+    PROFD2W = 0.07d0
+
     !   Offset of particle diffusion coefficient profile
     PROFDB = 0.d0
 
@@ -2129,7 +2133,7 @@ module tx_parameter_control
        & PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza,PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0, &
        & Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC, &
        & FSDFIX,FSANOM,FSCBAL,FSCBKP,FSCBEL,FSCBSH,FSBOHM,FSPCL,FSVAHL,MDANOM,RhoETB, &
-       & FSMPCH,PCHRLN,PCHSLP,PCHWID,RhoPch1,RhoPch2,FSTPTM,FSPARV,PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB, &
+       & FSMPCH,PCHRLN,PCHSLP,PCHWID,RhoPch1,RhoPch2,FSTPTM,FSPARV,PROFD,PROFD1,PROFD2,PROFD2C,PROFD2W,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB, &
        & FSCX,FSLC,FSRP,FSNF,FSADV,FSADVB,FSUG,FSNC,FSNCB,FSLP,FSLPB,FSLTs,FSION, &
        & FSNCOL,FSD01,FSD02,FSD03,FSD0z,MDLC,rLn,rLT,FSG0iz, &
        & Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBHP,PNBHT1,PNBHT2,PNBCD,PNBMPD,PNBPTC, &
@@ -2290,7 +2294,9 @@ contains
           idx = idx + 1 ; end if
        if(RhoPch1 < 0.d0 .or. RhoPch2 <= RhoPch1) then ; exit ; else
           idx = idx + 1 ; end if
-       if(minval(FSTPTM) < 0.d0 .or. maxval(FSTPTM) > 4.d0) then ; exit ; else
+       ! FSTPTM selects an integer option 0-4; a value such as 2.5 would be taken by
+       ! the branches of TXCALA for another option, so non-integer values are rejected.
+       if(minval(FSTPTM) < 0.d0 .or. maxval(FSTPTM) > 4.d0 .or. any(FSTPTM /= aint(FSTPTM))) then ; exit ; else
           idx = idx + 1 ; end if
        ! FSTPTM = 3 and 4 add forces that couple pairs of species, so they only
        ! conserve momentum (and hence stay ambipolar) if every species carries the
@@ -2388,11 +2394,11 @@ contains
          &       ' ',8X,'Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC,'/ &
          &       ' ',8X,'FSDFIX,FSANOM,FSCBAL,FSCBKP,FSCBEL,FSCBSH,FSBOHM,FSPCL,FSVAHL,'/ &
          &       ' ',8X,'MDANOM,RhoETB,FSMPCH,PCHRLN,PCHSLP,PCHWID,RhoPch1,RhoPch2,FSTPTM,FSPARV'/ &
-         &       ' ',8X,'PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB,'/ &
+         &       ' ',8X,'PROFD,PROFD1,PROFD2,PROFD2C,PROFD2W,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB,'/ &
          &       ' ',8X,'FSCX,FSLC,FSRP,FSNF,FSADV,FSADVB,FSUG,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,'/ &
          &       ' ',8X,'FSNCOL,FSD01,FSD02,FSD03,FSD0z,MDLC,rLn,rLT,FSG0iz'/ &
          &       ' ',8X,'Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBHP,PNBHT1,PNBHT2,'/ &
-         &       ' ',8X,'PNBCD,PNBMPD,PNBPTC,rNRFe,RRFew,RRFe0,PRFHe,Tqt0,Tqp0,rNRFe,RRFew,RRFe0,PRFHe,'/&
+         &       ' ',8X,'PNBCD,PNBMPD,PNBPTC,rNRFe,RRFew,RRFe0,PRFHe,Tqt0,Tqp0,rNRFi,RRFiw,RRFi0,PRFHi,'/&
          &       ' ',8X,'PN0s,V0,rGamm0_in,rGASPF,PN0zs,V0z,rGamm0zz_in,rGamm0iz_in,rGASPFz,PNsSUP,PTsSUP,'/ &
          &       ' ',8X,'RWALL,RWALLZ,RWALLIZ,'/ &
          &       ' ',8X,'NTCOIL,DltRPn,RDltRPn,kappa,m_pol,n_tor,'/ &
@@ -2405,8 +2411,9 @@ contains
          &       ' ',8X,'rIPs,rIPe,'/ &
          &       ' ',8X,'MODEG,MODEAV,MODEGL,MDLPCK,MODECV,oldmix,oldmixa,iaxproj,rhoaxproj,Dnfac,'/ &
          &       ' ',8X,'iSUPG3,iSUPG6,iSUPG8,SUPGstab,iprestab,'/ &
-         &       ' ',8X,'MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDBSETA,MDITSN,MDITST,MDINTN,MDINTT,MDLETB,' / & 
-         &       ' ',8X,'IDIAG,midbg,IGBDF,ISMTHD,MDLNBD,MDBMCX,imodel_neo')
+         &       ' ',8X,'MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDBSETA,MDITSN,MDITST,MDINTN,MDINTT,MDINTC,MDLETB,' / & 
+         &       ' ',8X,'MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,NANDER,NRETRY,' / &
+         &       ' ',8X,'iPoyntpol,iPoynttor,IDIAG,midbg,IGBDF,ISMTHD,MDLNBD,MDBMCX,imodel_neo')
   end subroutine TXPLST
 
 !***************************************************************
@@ -2419,6 +2426,7 @@ contains
 
     write(6,'((1X,A11," =",ES11.4,2(2X,A11," =",ES11.4)))') &
          &   'RA         ', RA         , 'RHOB       ', RHOB       ,  &
+         &   'rhoaccum   ', rhoaccum   , &
          &   'RR         ', RR         , 'BB         ', BB         ,  &
          &   'RAVL       ', RAVL       , 'RBVL       ', RBVL       ,  &
          &   'rbvt       ', rbvt       , &
@@ -2427,6 +2435,7 @@ contains
          &   'PN0        ', PN0        , 'PNa        ', PNa        ,  &
          &   'PTe0       ', PTe0       , 'PTea       ', PTea       ,  &
          &   'PTi0       ', PTi0       , 'PTia       ', PTia       ,  &
+         &   'PTz0       ', PTz0       , 'PTza       ', PTza       ,  &
          &   'Zeffin     ', Zeffin     , 'rIP        ', rIP        ,  &
          &   'rIPs       ', rIPs       , 'rIPe       ', rIPe       ,  &
          &   'PROFJ      ', PROFJ      , 'PROFN1     ', PROFN1     ,  &
@@ -2450,7 +2459,8 @@ contains
          &   'FSPARV(3)  ', FSPARV(3)  ,  &
          &   'VWpch0     ', VWpch0     , 'WPM0       ', WPM0       ,  &
          &   'PROFD      ', PROFD      , 'PROFD1     ', PROFD1     ,  &
-         &   'PROFD2     ', PROFD2     , 'PROFDB     ', PROFDB     ,  &
+         &   'PROFD2     ', PROFD2     , 'PROFD2C    ', PROFD2C    ,  &
+         &   'PROFD2W    ', PROFD2W    , 'PROFDB     ', PROFDB     ,  &
          &   'PROFM      ', PROFM      , 'PROFM1     ', PROFM1     ,  &
          &   'PROFMB     ', PROFMB     , 'PROFC      ', PROFC      ,  &
          &   'PROFC1     ', PROFC1     , 'PROFCB     ', PROFCB     ,  &
@@ -2483,10 +2493,11 @@ contains
          &   'RNBT2      ', RNBT2      , 'RNBT20     ', RNBT20     ,  &
          &   'PNBHP      ', PNBHP      , 'PNBHT1     ', PNBHT1     ,  &
          &   'PNBHT2     ', PNBHT2     , 'PNBHex     ', PNBHex     ,  &
+         &   'PNBCD      ', PNBCD      , &
          &   'PNBMPD     ', PNBMPD     , 'PNBPTC     ', PNBPTC     ,  &
          &   'rNRFe      ', rNRFe      , 'RRFew      ', RRFew      ,  &
          &   'RRFe0      ', RRFe0      , 'PRFHe      ', PRFHe      ,  &
-         &   'rNRFi      ', rNRFe      , 'RRFiw      ', RRFiw      ,  &
+         &   'rNRFi      ', rNRFi      , 'RRFiw      ', RRFiw      ,  &
          &   'RRFi0      ', RRFi0      , 'PRFHi      ', PRFHi      ,  &
          &   'Tqt0       ', Tqt0       , 'Tqp0       ', Tqp0       ,  &
          &   'rGamm0_in  ', rGamm0_in  , 'V0         ', V0         ,  &
@@ -2501,14 +2512,17 @@ contains
          &   'DltRPn     ', DltRPn     , 'RDltRPn    ', RDltRPn    ,  &
          &   'kappa      ', kappa      ,  &
          &   'PN0s       ', PN0s       , 'PN0zs      ', PN0zs      ,  &
+         &   'FLlim      ', FLlim      , 'RLXN0      ', RLXN0      ,  &
          &   'EPS        ', EPS        , 'tiny_cap   ', tiny_cap   ,  &
          &   'DT         ', DT         , 'rG1        ', rG1        ,  &
+         &   'DelRho     ', DelRho     , 'DelN       ', DelN       ,  &
          &   'DMAG0      ', DMAG0      , 'RMAGMN     ', RMAGMN     ,  &
          &   'RMAGMX     ', RMAGMX     ,  &
          &   'FSHL       ', FSHL       ,  &
          &   'Q0         ', Q0         , 'QA         ', QA         ,  &
          &   'SUPGstb    ', SUPGstab  ,  'oldmix     ', oldmix     ,  &
-         &   'oldmixa    ', oldmixa    !, &
+         &   'oldmixa    ', oldmixa    , 'rhoaxproj  ', rhoaxproj  ,  &
+         &   'Dnfac      ', Dnfac      !, &
 !!$         &   'EpsHM(1,0) ', EpsHM(1,0)  ,'EpsHM(1,1)', EpsHM(1,1)  , &
 !!$         &   'EpsHM(1,2) ', EpsHM(1,2)  ,'EpsHM(1,3)', EpsHM(1,3)  , &
 !!$         &   'EpsHM(2,0) ', EpsHM(2,0)  ,'EpsHM(2,1)', EpsHM(2,1)  , &
@@ -2524,9 +2538,11 @@ contains
          &   'NGVSTP     ', NGVSTP     , 'ieqread    ', ieqread    ,  &
          &   'irktrc     ', irktrc     , 'ipbtdir    ', ipbtdir    ,  &
          &   'ICMAX      ', ICMAX      , 'ICCALC     ', ICCALC     ,  &
+         &   'NANDER     ', NANDER     , 'NRETRY     ', NRETRY     ,  &
          &   'MODEG      ', MODEG      ,  &
          &   'MODEAV     ', MODEAV     , 'MODEGL     ', MODEGL     ,  &
          &   'MDLPCK     ', MDLPCK     , 'MODECV     ', MODECV     ,  &
+         &   'iaxproj    ', iaxproj    , &
          &   'IDIAG      ', IDIAG      , 'midbg(1)   ', midbg(1)   ,  &
          &   'midbg(2)   ', midbg(2)   ,  &
          &   'iSUPG3     ', iSUPG3     , 'iSUPG6     ', iSUPG6     ,  &
@@ -2542,6 +2558,9 @@ contains
          &   'iPoynttor  ',iPoynttor   , 'MDLETB     ', MDLETB     ,  &
          &   'MDLNBD     ', MDLNBD     , 'MDBMCX     ', MDBMCX     ,  &
          &   'MDLC       ', MDLC       , 'NTCOIL     ', NTCOIL     ,  &
+         &   'MDLNZD     ', MDLNZD     , 'MDLN0FL    ', MDLN0FL    ,  &
+         &   'MDLSOL     ', MDLSOL     , 'MDLWBC     ', MDLWBC     ,  &
+         &   'MDLNSUP    ', MDLNSUP    , &
          &   'imodelneo1 ', imodel_neo(1), 'imodelneo2 ', imodel_neo(2),  &
          &   'imodelneo3 ', imodel_neo(3), 'imodelneo4 ', imodel_neo(4),  &
          &   'imodelneo5 ', imodel_neo(5), 'imodelneo6 ', imodel_neo(6)!,  &

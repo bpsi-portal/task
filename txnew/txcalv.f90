@@ -527,16 +527,20 @@ contains
        end do
 
        ! NRB : Boundary of N02 source
+       !   SCX(NRMAX) = 0 while the slow neutrals have not yet reached the wall
+       !   (PN01V(NRMAX) = 0 in the first steps of a cold start): NRB stays NRA.
        NRB = NRA
-       do NR = NRMAX - 1, 0, -1
-          RatSCX = SCX(NR) / SCX(NRMAX)
-          if(RatSCX < 1.D-8) then
-             NRB = NR
-             exit
-          else if (RatSCX < tiny_cap) then
-             NRB = NR - 1
-          end if
-       end do
+       if(SCX(NRMAX) /= 0.d0) then
+          do NR = NRMAX - 1, 0, -1
+             RatSCX = SCX(NR) / SCX(NRMAX)
+             if(RatSCX < 1.D-8) then
+                NRB = NR
+                exit
+             else if (RatSCX < tiny_cap) then
+                NRB = NR - 1
+             end if
+          end do
+       end if
 
        ! Neoclassical quantities associated with equilibrium 
        call wrap_eqneo
@@ -1030,7 +1034,7 @@ contains
        RhoSOL = 1.d0
        if (RHO(NR) < RhoSOL) then
 !          DeL = diff_prof(RHO(NR),FSDFIX(1),PROFD,PROFD1,PROFDB) + FSANOM(1) * Dturb
-          DeL = diff_prof(RHO(NR),FSDFIX(1),PROFD,PROFD1,PROFDB,PROFD2,0.99d0,0.07d0) &
+          DeL = diff_prof(RHO(NR),FSDFIX(1),PROFD,PROFD1,PROFDB,PROFD2,PROFD2C,PROFD2W) &
 !          DeL = diff_prof(RHO(NR),FSDFIX(1),PROFD,PROFD1,PROFDB,PROFD2,0.99d0,0.125d0) &
                & + FSANOM(1) * Dturb
        else

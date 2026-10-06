@@ -96,6 +96,7 @@ module tx_commons
   ! Amplitude parameters for transport
   real(8) :: FSCBAL, FSCBKP, FSCBEL, FSCBSH, FSBOHM, FSVAHL
   real(8) :: PROFD, PROFD1, PROFD2, PROFDB, PROFM, PROFM1, PROFMB, PROFC, PROFC1, PROFCB
+  real(8) :: PROFD2C, PROFD2W
   real(8) :: FSCX, FSLC, FSLP, FSLPB, FSION, FSNCOL, FSD01, FSD02, FSD03, FSD0z, rG1, FSRP, FSNF
 
   !   MDLNZD : radial transport of the C0-C5 superstage LQnz.
