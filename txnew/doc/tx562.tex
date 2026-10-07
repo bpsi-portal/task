@@ -2741,8 +2741,8 @@ Runs without NBI are bit-identical to V5.60 (X-point and circular test
 equilibria, \texttt{NRMAX} = 60 and 240, \texttt{MDLNZD} = 0, \texttt{MDLN0FL} = 2,
 \texttt{FSRP} = 0 and 1).  No default switch changes.  For runs with NBI, and in
 particular with \texttt{FSRP} = 1, \texttt{NANDER} = $-20$ is recommended
-(Sec.~\ref{sec:anderson}): the impurity radial flux at the wall converges slowly
-without it once the beam heats the edge.
+(Sec.~\ref{sec:anderson}; $-50$ at \texttt{NRMAX} = 240): the impurity radial flux at the
+wall converges slowly without it once the beam heats the edge.
 
 \subsection{\texttt{FSRP} and the ripple-well fraction}
 
@@ -3304,6 +3304,25 @@ other variables have converged: with \texttt{NANDER} = $-20$ the average number
 of sweeps is 33.5 (240) and 67.1 (480), and 3 of 100 steps at 480 reach
 \texttt{ICMAX}, on the other variables.
 
+Later in the JT-60U case at \texttt{NRMAX} = 240 with NBI (0.2--0.4\,s) the slow
+modes are not a single axis mode but a band of $BV_1$ modes of all species, on the
+axis and at $\rho\approx0.65$--0.9 (32--39 eigenvalues of the Picard map above 0.9),
+and the mixing removes them only when its depth exceeds the band, as GMRES would.
+From the state at 0.25\,s ($\Delta t = 5\times10^{-5}$, 400 steps, \texttt{NRETRY} = 1,
+with the floor of Sec.~\ref{sec:lqm3tol}) \texttt{NANDER} = $-10$, $-20$, $-30$, $-40$,
+$-50$ retake 400, 273, 6, 0, 1 steps, leave 400, 102, 0, 0, 0 of them unconverged at
+$\Delta t/2$, and take 1.36, 1, 0.46, 0.33, 0.39 times the CPU time of $-20$;
+clearing the history every 30 sweeps, or fitting only the $BV_1$ rows, is worse than
+$-20$.  The band widens later: from the state at 0.6\,s \texttt{NANDER} = $-40$ retakes
+13\% of the steps and $-50$ 0.3\%, in 0.66 times the CPU time; clearing the history when
+the residual grows, or leaving \texttt{LQm1}--\texttt{LQm5} out of the correction, is
+worse.  The mixing costs about 3\,ms per sweep at depth 40 (a sweep about 30\,ms).
+At \texttt{NRMAX} = 240 with NBI, \texttt{NANDER} = $-50$, the deepest accepted, is advised
+together with $\Delta t = 5\times10^{-5}$\,s and \texttt{NRETRY} = 1 (Sec.~\ref{sec:v552other});
+the default of \texttt{NANDER} stays 0.
+The axis mode at \texttt{NRMAX} = 60 with 6.4\,MW (Sec.~\ref{sec:v552other}) does not
+depend on the depth.
+
 \subsection{Convergence test of $\psitd$ (\texttt{LQm2})}
 \label{sec:lqm2tol}
 
@@ -3321,8 +3340,8 @@ with $X_5 = \psit/\mu_0$ (\texttt{LQm5}), $\epsilon_\r{m}$ the machine epsilon a
 \texttt{ADV} the weight of the implicit terms (2/3 for BDF2, 1 in the first step).
 \texttt{LQm2} is not removed from the test: the relative term is kept as it is
 for every variable, and only the floor term is added.  The test of every other
-variable (including $\psid$, \texttt{LQm3}), the equations and the fixed point are
-unchanged.
+variable, the equations and the fixed point are unchanged; $\psid$
+(\texttt{LQm3}) has a floor of the same kind (Sec.~\ref{sec:lqm3tol}).
 
 The floor has two factors.  $\psit$ is mostly vacuum flux, and in Amp\`ere's
 law (the \texttt{LQm2} row) the $\nabla\times B_\phi$ term applied to it is a
@@ -3388,6 +3407,55 @@ The BDF2 errors and orders of $n$, $T$, $j$ and $Z_\r{eff}$ are unchanged
 the two finest steps rises from $6$--$8\times10^{-6}$ to $1.5\times10^{-5}$, its
 floor.  With \texttt{NANDER} = 0 the slow \texttt{LQ*8} mode still decides most
 steps at \texttt{NRMAX} $\ge$ 240, and the floor term changes little.
+
+\subsection{Convergence test of $\psid$ (\texttt{LQm3})}
+\label{sec:lqm3tol}
+
+$\psid$ has a floor of the same origin.  Amp\`ere's law for $\psi'$ (the
+\texttt{LQm3} row) holds $\psi$ through a second difference whose terms are about
+$\texttt{NRMAX}^2$ times larger than their sum, so $\psi$ is determined only to a
+relative $\sim\epsilon_\r{m}\texttt{NRMAX}^2$; Faraday's law (the \texttt{LQm4} row)
+gives $\psid = -\mu_0(X_4 - c_1X_4^{n} + c_2X_4^{n-1})/(\texttt{ADV}\,\Delta t)$ with
+$X_4 = \psi/\mu_0$ ($\psi$ without NBI) and multiplies that rounding by
+$\tau_\psi/(\texttt{ADV}\,\Delta t)$, $\tau_\psi = \psi/\psid$.  The test is
+\[
+  \max_j|\Delta X_{3,j}| \le \texttt{EPS}\,\mathrm{rms}(X_3)
+  + C_\r{r}\,\epsilon_\r{m}\,\texttt{NRMAX}^2\,
+    \frac{\mu_0\,\mathrm{rms}(X_4)}{\texttt{ADV}\,\Delta t},
+  \qquad C_\r{r} = 1,
+\]
+with $\texttt{ADV}$ and $\Delta t$ those of the current (sub)step, so it follows the
+variable-step weights of a retried step.  $X_4$ itself and every other variable are
+tested against \texttt{EPS} as before.
+
+Measured from the JT-60U state with NBI at 0.2\,s (\texttt{NRMAX} = 240,
+$\tau_\psi = 23$\,s): from the second sweep on the increment of $\psid$ is
+$\mu_0/(\texttt{ADV}\,\Delta t)$ times that of $X_4$ to all printed digits
+($\Delta t = 10^{-4}$--$5\times10^{-6}$), and the relative increment of $X_4$ stops at
+$(0.02$--$0.04)\,\epsilon_\r{m}\texttt{NRMAX}^2$ (median; largest 0.07--0.15) at
+\texttt{NRMAX} = 240, 120, 60, at a node that moves from sweep to sweep.  The floor
+term is $4.4\times10^{-6}$, $4.4\times10^{-5}$, $8.8\times10^{-5}$ of
+$\mathrm{rms}(\psid)$ at $\Delta t = 10^{-4}$, $10^{-5}$, $5\times10^{-6}$; it grows as
+$1/\Delta t$ and as the loop voltage relaxes, and so do the steps that the relative
+test alone leaves unconverged on \texttt{LQm3} at small $\Delta t$ and late times
+(at $\Delta t = 10^{-5}$ their remaining increments are $0.13$--$0.32\,\epsilon_\r{m}
+\texttt{NRMAX}^2$ in $X_4$): $\psi$ has converged and the test cannot go below
+its rounding.
+
+The floor enters only the stopping test; the relaxation and the Anderson
+mixing use the raw increments.  Where it does not stop a step earlier the run
+is bit-identical: \texttt{NRMAX} = 60 with and without NBI (300 steps); at
+\texttt{NRMAX} = 240 ($\Delta t = 10^{-4}$, 300 steps, with and without NBI) every
+step takes the same number of sweeps and only the printed variable of the
+largest increment changes.  From the state at 0.2\,s to 0.4\,s with
+$\Delta t = 10^{-5}$ (\texttt{NANDER} = $-20$, \texttt{NRETRY} = 1) the retried
+steps fall from 2175 to 679 of 20000 and the steps not converged at $\Delta t/2$
+from 604 to 75; their last substeps were on \texttt{LQm3} (330 of 331) and are
+now on the beam flux $\Gamma_\r{b}$ (\texttt{LQb2}) at $\rho\approx0.35$ (36 of 37),
+whose increment moves with that of $\psid$ at about 0.2 of its relative size.
+At 0.4\,s the two solutions differ by less than $10^{-5}$ of the profile RMS
+except $\psitd$ ($3\times10^{-4}$, its floor) and $BV_1$ near the axis
+($\le 8\times10^{-5}$).
 
 \subsection{New defaults and V5.52 compatibility}
 
@@ -3554,6 +3622,8 @@ either case.
   run gives the number and share of retaken steps and the finest substep, and warns when more
   than 10\% of the steps were retaken (a smaller base $\Delta t$ is then the right fix) or when
   steps did not converge even at $\Delta t/2^{\texttt{NRETRY}}$.
+\item Convergence test of $\psid$ (\texttt{LQm3}) with a rounding-floor term, as for $\psitd$
+  (Sec.~\ref{sec:lqm3tol}).  No input; a run in which no step reaches the floor is bit-identical.
 \item Known numerical limit, the axis \texttt{LQ*8}: with NBI the Picard map has a slowly contracting
   mode on the axis node of $BV_1$ (mostly the impurity) and the poloidal field, of the form
   $\lambda \approx A\Delta t/(1 + A\Delta t)$, $A \approx 2\times10^5$ s$^{-1}$ (a fast coupling taken
@@ -3561,12 +3631,32 @@ either case.
   beam, impurity and ion densities.  Without NBI it does not appear up to \texttt{NRMAX} = 240.
   At \texttt{NRMAX} = 60 it shows as bursts of steps needing 70--140 sweeps (6.4 MW NBI with
   \texttt{FSTPTM} = 3 or 4, the benchmark with \texttt{FSTPTM} = 4), harmless for the solution
-  ($\le 2\times10^{-6}$) and removed by \texttt{NRETRY} = 1; at 120 it is sporadic to frequent
+  ($\le 2\times10^{-6}$) and, in those runs, removed by \texttt{NRETRY} = 1.  With the potato closure
+  (\texttt{imodel\_neo(4)} = 1) and \texttt{NANDER} = $-20$ or $-40$ the 6.4 MW case has a window at
+  0.92--0.96 s that leaves about 175 steps unconverged at $\Delta t/2$ with \texttt{NRETRY} = 1;
+  \texttt{NRETRY} = 2 converges all but one, $\Delta t = 5\times10^{-5}$ s has no window, and the
+  solutions agree there to $3.5\times10^{-5}$; for this regime \texttt{NRETRY} = 2 is advised (cheaper
+  than halving $\Delta t$).  At 120 it is sporadic to frequent
   (\texttt{NRETRY} = 1 retakes up to 15\% of the steps with 3.2 MW, 65\% with 6.4 MW); at 240 it
   is persistent, and without retries an odd-even mode of $BV_{1\r{z}}$ and $n_\r{z}$ grows on the
   axis until $n_\r{z}(0) < 0$ at 0.1 s; with \texttt{NRETRY} $\ge 1$ or $\Delta t \le 5\times10^{-5}$ s the
-  run stays positive to 0.4 s but still stalls often, so $\Delta t$ of about $10^{-5}$ s is advised
-  there.  With 6.4 MW and \texttt{FSTPTM} = 4 at \texttt{NRMAX} = 120 the impurity density on the
+  run stays positive to 0.4 s.  A smaller $\Delta t$ removes the axis mode (with \texttt{NANDER} =
+  $-20$ the steps left unconverged on it at $\Delta t/2$ over 0--0.4 s fall from 1278 at $10^{-4}$ s to
+  23 at $2.5\times10^{-5}$ s and none at $10^{-5}$ s), but after about 0.2 s the stalls move to a band
+  of slow $BV_1$ modes of all species (Sec.~\ref{sec:anderson}) and, at small $\Delta t$, to the
+  floor of $\psid$ (Sec.~\ref{sec:lqm3tol}), which grows as $1/\Delta t$: at $10^{-5}$ s 11\% of
+  the steps from 0.2 to 0.4 s were retried and 604 left unconverged at $\Delta t/2$, so a step
+  that small does not help.  At \texttt{NRMAX} = 240 with NBI use $\Delta t = 5\times10^{-5}$ s,
+  \texttt{NRETRY} = 1 and \texttt{NANDER} = $-50$ (the default of \texttt{NANDER} stays 0): with the floor
+  of Sec.~\ref{sec:lqm3tol}, from 0.2 to 0.8 s 0.4\% of the steps are retried and 1 is left
+  unconverged at $\Delta t/2$.  Without the floor the same settings retry
+  4--5\% of the steps from 0.5 to 0.7 s (7 unconverged, on $\psid$); with \texttt{NANDER} = $-40$ and
+  the floor 0.8\% from 0.2 to 0.4 s but 7\% from 0.4 to 0.8 s (10--14\% from 0.5 to 0.65 s, 16
+  unconverged).  $\Delta t = 2.5\times10^{-5}$ s costs 1.4--1.5 times as much; at $10^{-4}$ s the axis
+  mode returns (22\% retried, 44 unconverged at $\Delta t/2$, with the floor and \texttt{NANDER} =
+  $-40$).  The solutions at 0.4 s with
+  $\Delta t = 10^{-4}$ to $10^{-5}$ s agree to about $10^{-5}$ of the profile RMS except $\psitd$ and
+  $BV_1$, which carry their floors ($\le 3\times10^{-4}$).  With 6.4 MW and \texttt{FSTPTM} = 4 at \texttt{NRMAX} = 120 the impurity density on the
   axis becomes negative at 0.86 s even with \texttt{NRETRY} = 1.  The continuum solution is regular.
 \item Potato closure near the magnetic axis, \texttt{imodel\_neo(4)} (default 1 since 2026-10; this element of
   \texttt{imodel\_neo} was unused before).  The matrix inversion (\texttt{MDLNEO} = 2) takes the viscosity of each
