@@ -371,7 +371,35 @@ contains
     !     1 : particle transport
     !     2 : momentum transport
     !     3 : thermal transport
+    !   With MDLSOLT = 0, for each channel:
+    !     1          : the whole core coefficient at rho = 1 (FSDFIX profile, PROF*B and
+    !                  FSANOM times the CDBM/CDIM value at the separatrix) carried into
+    !                  the SOL as a constant (default)
+    !     0          : the same scaled by the Bohm shape, T_e/(16 e B) relative to its
+    !                  value at the separatrix
+    !     other >= 0 : FSPCL times the fixed part without FSANOM, or the anomalous part
+    !                  alone with FSANOM (kept as it was)
     FSPCL(1:3) = 1.d0
+
+    !   Anomalous transport in the SOL
+    !     MDLSOLT = 0 : as selected by FSPCL (default)
+    !     MDLSOLT = 1 : exponential connection to far-SOL values (FSPCL is not used),
+    !                   C(rho) = C_SOL + [C_core(1) - C_SOL] exp[-(rho - 1)/WSOLT]
+    !                   for D, chi and mu; C_core(1) is the whole core coefficient at
+    !                   rho = 1 as for FSPCL = 1, and C_SOL is DSOLT for Dfs(:,1) (the
+    !                   only diffusivity that enters the particle transport), CHISOLT(s)
+    !                   and RMUSOLT(s) for chi_s and mu_s [m^2/s].  WSOLT is the e-folding
+    !                   width in rho (Delta r ~ RA*WSOLT at the outer midplane).
+    !   The connection is phenomenological: DSOLT, CHISOLT, RMUSOLT and WSOLT have no
+    !   universally recommended values, and MDLSOLT = 1 requires them all > 0 (they are
+    !   unset, -1, by default).  About four elements outside the separatrix within WSOLT
+    !   resolve the connection (a guide; fewer than two give a warning, as does a WSOLT
+    !   that leaves more than 5% of C_core(1) - C_SOL at the wall).  Not with MDANOM = 3.
+    MDLSOLT = 0
+    DSOLT = -1.d0
+    CHISOLT(1:NSM) = -1.d0
+    RMUSOLT(1:NSM) = -1.d0
+    WSOLT = -1.d0
 
     !   ***** Other transport parameters *****
 
@@ -1119,6 +1147,14 @@ contains
           exit
        end if
     end do
+
+    !  MDLSOLT = 1: the connection width against the element outside the separatrix
+    !  (rho(NRA) = 1 for any rhoaccum; with rhoaccum >= 0 the mesh is not refined there)
+    if(MDLSOLT == 1) then
+       if(WSOLT < 2.d0 * (rho(NRA+1) - rho(NRA))) write(6,'(A,ES10.3,A,ES10.3,A)') &
+            & ' ## WARNING: WSOLT =', WSOLT, ' is less than two elements outside the separatrix (', &
+            & rho(NRA+1) - rho(NRA), ' each); the connection is not resolved.'
+    end if
 
     !  Equilibrium
     call txequ
@@ -2140,6 +2176,7 @@ module tx_parameter_control
        & PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza,PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0, &
        & Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC, &
        & FSDFIX,FSANOM,FSCBAL,FSCBKP,FSCBEL,FSCBSH,FSBOHM,FSPCL,FSVAHL,MDANOM,RhoETB, &
+       & MDLSOLT,DSOLT,CHISOLT,RMUSOLT,WSOLT, &
        & FSMPCH,PCHRLN,PCHSLP,PCHWID,RhoPch1,RhoPch2,FSTPTM,FSPARV,PROFD,PROFD1,PROFD2,PROFD2C,PROFD2W,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB, &
        & FSCX,FSLC,FSRP,FSNF,FSADV,FSADVB,FSUG,FSNC,FSNCB,FSLP,FSLPB,FSLTs,FSION, &
        & FSNCOL,FSD01,FSD02,FSD03,FSD0z,MDLC,rLn,rLT,FSG0iz, &
@@ -2381,6 +2418,22 @@ contains
           idx = idx + 1 ; end if
        ! potato closure (acts only with MDLNEO = 2 and imodel_neo(5) = 0)
        if(imodel_neo(4) < 0 .or. imodel_neo(4) > 1) then ; exit ; else ; idx = idx + 1 ; end if
+       ! anomalous transport in the SOL (MDLSOLT): the inputs of the connection have no
+       ! default, and MMM95 (MDANOM = 3) sets the SOL coefficients itself
+       if(MDLSOLT < 0 .or. MDLSOLT > 1) then ; exit ; else ; idx = idx + 1 ; end if
+       if(MDLSOLT == 1 .and. (DSOLT <= 0.d0 .or. minval(CHISOLT) <= 0.d0 .or. minval(RMUSOLT) <= 0.d0 &
+            &                 .or. WSOLT <= 0.d0)) then
+          write(6,'(A)') 'XX MDLSOLT = 1 needs DSOLT, CHISOLT(1:NSM), RMUSOLT(1:NSM) and WSOLT > 0 (no defaults).'
+          exit ; else ; idx = idx + 1 ; end if
+       if(MDLSOLT == 1 .and. abs(MDANOM) == 3) then
+          write(6,'(A)') 'XX MDLSOLT = 1 is not available with MDANOM = 3 (MMM95).'
+          exit ; else ; idx = idx + 1 ; end if
+       if(MDLSOLT == 1) then
+          if(any(FSPCL /= 1.d0)) write(6,'(A)') ' ## WARNING: FSPCL is not used with MDLSOLT = 1.'
+          if(exp(- (rhob - 1.d0) / WSOLT) > 0.05d0) write(6,'(A,ES10.3,A,F5.1,A)') &
+               & ' ## WARNING: with WSOLT =', WSOLT, ',', 1.d2 * exp(- (rhob - 1.d0) / WSOLT), &
+               & '% of C_core(1) - C_SOL remains at the wall.'
+       end if
        return
     end do
 
@@ -2400,6 +2453,7 @@ contains
          &       ' ',8X,'PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza,PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0,'/ &
          &       ' ',8X,'Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC,'/ &
          &       ' ',8X,'FSDFIX,FSANOM,FSCBAL,FSCBKP,FSCBEL,FSCBSH,FSBOHM,FSPCL,FSVAHL,'/ &
+         &       ' ',8X,'MDLSOLT,DSOLT,CHISOLT,RMUSOLT,WSOLT,'/ &
          &       ' ',8X,'MDANOM,RhoETB,FSMPCH,PCHRLN,PCHSLP,PCHWID,RhoPch1,RhoPch2,FSTPTM,FSPARV'/ &
          &       ' ',8X,'PROFD,PROFD1,PROFD2,PROFD2C,PROFD2W,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB,'/ &
          &       ' ',8X,'FSCX,FSLC,FSRP,FSNF,FSADV,FSADVB,FSUG,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,'/ &
@@ -2480,6 +2534,10 @@ contains
          &   'FSCBEL     ', FSCBEL     , 'FSCBSH     ', FSCBSH     ,  &
          &   'FSBOHM     ', FSBOHM     , 'FSPCL(1)   ', FSPCL(1)   ,  &
          &   'FSPCL(2)   ', FSPCL(2)   , 'FSPCL(3)   ', FSPCL(3)   ,  &
+         &   'DSOLT      ', DSOLT      , 'WSOLT      ', WSOLT      ,  &
+         &   'CHISOLT(1) ', CHISOLT(1) , 'CHISOLT(2) ', CHISOLT(2) ,  &
+         &   'CHISOLT(3) ', CHISOLT(3) , 'RMUSOLT(1) ', RMUSOLT(1) ,  &
+         &   'RMUSOLT(2) ', RMUSOLT(2) , 'RMUSOLT(3) ', RMUSOLT(3) ,  &
          &   'FSVAHL     ', FSVAHL     , 'FSCX       ', FSCX       ,  &
          &   'FSLC       ', FSLC       , 'FSRP       ', FSRP       ,  &
          &   'FSNF       ', FSNF       , 'FSNC(1)    ', FSNC(1)    ,  &
@@ -2567,7 +2625,7 @@ contains
          &   'MDLC       ', MDLC       , 'NTCOIL     ', NTCOIL     ,  &
          &   'MDLNZD     ', MDLNZD     , 'MDLN0FL    ', MDLN0FL    ,  &
          &   'MDLSOL     ', MDLSOL     , 'MDLWBC     ', MDLWBC     ,  &
-         &   'MDLNSUP    ', MDLNSUP    , &
+         &   'MDLNSUP    ', MDLNSUP    , 'MDLSOLT    ', MDLSOLT    ,  &
          &   'imodelneo1 ', imodel_neo(1), 'imodelneo2 ', imodel_neo(2),  &
          &   'imodelneo3 ', imodel_neo(3), 'imodelneo4 ', imodel_neo(4),  &
          &   'imodelneo5 ', imodel_neo(5), 'imodelneo6 ', imodel_neo(6)!,  &

@@ -352,7 +352,7 @@ contains
          &     factor_bohm, rNustar, &
          &     RLOSS, sqz, rNuDL, Ln, LT, etai_chk, kthrhos, &
          &     SitotC0, V0zave, dn0dV, Swall, &
-         &     RhoSOL, V0ave, Viave, DturbA, rLmean, Sitot, &
+         &     RhoSOL, V0ave, Viave, DturbA, fsolt, rLmean, Sitot, &
          &     rGCIM, rGIM, rHIM, OMEGAPR !09/06/17~ miki_m
 !!$    real(8) ::Cs, Lc, PTiVA, Chicl, 
     real(8), dimension(0:NRMAX) :: gr2phi
@@ -1035,6 +1035,8 @@ contains
        ! not by an exact comparison of Rho with 1; the loop runs outward, so it is
        ! set before the SOL nodes use it (zero without FSANOM)
        if(NR == NRA) DturbA = Dturb
+       ! MDLSOLT = 1: weight of the separatrix value at a SOL node, exp[-(rho - 1)/WSOLT]
+       if(MDLSOLT == 1 .and. RHO(NR) >= 1.d0) fsolt = exp(- (RHO(NR) - 1.d0) / WSOLT)
 
        !     *** Turbulent transport of particles ***
        !     ***     Wave-particle interaction    ***
@@ -1045,6 +1047,11 @@ contains
           DeL = diff_prof(RHO(NR),FSDFIX(1),PROFD,PROFD1,PROFDB,PROFD2,PROFD2C,PROFD2W) &
 !          DeL = diff_prof(RHO(NR),FSDFIX(1),PROFD,PROFD1,PROFDB,PROFD2,0.99d0,0.125d0) &
                & + FSANOM(1) * Dturb
+       else if(MDLSOLT == 1) then
+          ! SOL connection (MDLSOLT = 1): the whole core coefficient at rho = 1 here,
+          ! connected to the far-SOL value below; FSPCL is not used
+          DeL = diff_prof(RhoSOL,FSDFIX(1),PROFD,PROFD1,PROFDB,PROFD2,PROFD2C,PROFD2W) &
+               & + FSANOM(1) * DturbA
        else
           if(FSPCL(1) == 0.d0) then
              ! Bohm-like diffusivity: the whole core coefficient at rho = 1 (FSDFIX(1) * PROFD
@@ -1077,6 +1084,8 @@ contains
 !!$!          DeL = DeL * (50.d0/9.d0*(Rho(NR)-1.d0)**2+0.5d0)
 !!$       end if
        Dfs(NR,:) = Dfs0(:) * DeL
+       ! only Dfs(:,1) enters the particle transport
+       if(MDLSOLT == 1 .and. RHO(NR) >= RhoSOL) Dfs(NR,1) = Dfs(NR,1) * fsolt + DSOLT * (1.d0 - fsolt)
 
        ! Turbulent pinch term [1/Wb]
        VWpch(NR) = VWpch0 * 0.d0
@@ -1089,6 +1098,8 @@ contains
           DeL = diff_prof(RHO(NR),FSDFIX(2),PROFML,PROFM1,PROFMB,0.d0) + FSANOM(2) * Dturb
 !          DeL = diff_prof(RHO(NR),FSDFIX(2),PROFML,PROFM1,PROFMB,0.d0,pedfact=-0.85d0,muped=0.95d0,sgped=0.05d0) + FSANOM(2) * Dturb ! pedestal for PoP2023
 !pedestal          if(rho(nr) > 0.9d0) DeL = DeL * exp(-120.d0*(rho(nr)-0.9d0)**2)
+       else if(MDLSOLT == 1) then
+          DeL = diff_prof(RhoSOL,FSDFIX(2),PROFML,PROFM1,PROFMB,0.d0) + FSANOM(2) * DturbA
        else
           if(FSPCL(2) == 0.d0) then
              factor_bohm = (FSDFIX(2) * PROFML + PROFMB + FSANOM(2) * DturbA) &
@@ -1109,6 +1120,7 @@ contains
        end if
        ! Viscosity
        rMus(NR,:) = rMus0(:) * DeL
+       if(MDLSOLT == 1 .and. RHO(NR) >= RhoSOL) rMus(NR,:) = rMus(NR,:) * fsolt + RMUSOLT(:) * (1.d0 - fsolt)
 
        !   ***** Momentum pinch *****
        !   -R V_pinch/mu = 1.1 R/L_ne + 1.0, both terms inward (V > 0 is outward)
@@ -1147,6 +1159,8 @@ contains
           DeL = diff_prof(RHO(NR),FSDFIX(3),PROFCL,PROFC1,PROFCB,0.d0) + FSANOM(3) * Dturb
 !          DeL = diff_prof(RHO(NR),FSDFIX(3),PROFCL,PROFC1,PROFCB,0.d0,pedfact=-0.85d0,muped=0.95d0,sgped=0.05d0) + FSANOM(3) * Dturb ! pedestal for PoP2023
 !pedestal          if(rho(nr) > 0.9d0) DeL = DeL * exp(-120.d0*(rho(nr)-0.9d0)**2)
+       else if(MDLSOLT == 1) then
+          DeL = diff_prof(RhoSOL,FSDFIX(3),PROFCL,PROFC1,PROFCB,0.d0) + FSANOM(3) * DturbA
        else
           if(FSPCL(3) == 0.d0) then
              factor_bohm = (FSDFIX(3) * PROFCL + PROFCB + FSANOM(3) * DturbA) &
@@ -1168,6 +1182,7 @@ contains
 !       DeL = 3.d0
        ! Thermal diffusivity
        Chis(NR,:) = Chis0(:) * DeL
+       if(MDLSOLT == 1 .and. RHO(NR) >= RhoSOL) Chis(NR,:) = Chis(NR,:) * fsolt + CHISOLT(:) * (1.d0 - fsolt)
 
        ! <omega/m>
 !!$       WPM(NR) = WPM0 * Var(NR,1)%T * rKeV / (ra**2 * AEE * BphV(NR))

@@ -158,6 +158,15 @@ module tx_commons
   real(8), dimension(1:2) :: FSNC, FSNCB
   real(8), dimension(1:3) :: FSDFIX, FSANOM, RhoETB, FSPCL
   integer(4) :: MDLC, MDANOM
+  !   MDLSOLT : anomalous transport in the SOL (rho >= 1).
+  !     0 : as selected by FSPCL (default).
+  !     1 : C(rho) = C_SOL + [C_core(1) - C_SOL] exp[-(rho - 1)/WSOLT] for D, chi and
+  !         mu, C_core(1) the whole core coefficient at rho = 1 and C_SOL the far-SOL
+  !         values DSOLT (of Dfs(:,1)), CHISOLT(1:NSM), RMUSOLT(1:NSM) [m^2/s];
+  !         FSPCL is not used.  The four inputs have no default (-1, unset).
+  integer(4) :: MDLSOLT
+  real(8) :: DSOLT, WSOLT
+  real(8), dimension(NSM) :: CHISOLT, RMUSOLT
 
   ! SOL parameters
   real(8) :: rLn, rLT  ! Scale lengths in SOL

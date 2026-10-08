@@ -228,7 +228,7 @@ subroutine TXSAVE
        & MODEAV,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab, &
        & IGBDF,ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor, &
        & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,thrp,kappa,CPsi,VPoynt,PoyntI,imodel_neo,MDLNSUP, &
-       & RWALL,RWALLZ,RWALLIZ,FSTPTM,PROFD2C,PROFD2W,NSM
+       & RWALL,RWALLZ,RWALLIZ,FSTPTM,PROFD2C,PROFD2W,NSM,MDLSOLT,DSOLT,CHISOLT,RMUSOLT,WSOLT
   use tx_graphic, only : NGYTM,NGYVM,MODEG,MODEGL,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP,GTY,GVY,GQY,GTX,GVX
   use tx_interface, only : TOUPPER
 
@@ -327,13 +327,15 @@ subroutine TXSAVE
   write(io) (thrp(I), I=1, 2*NRMAX)
   ! Extension records for inputs added after the layout above was fixed, one record
   ! per version (1: MDLNSUP, 2: main-wall recycling, 3: FSTPTM, 4: centre and width of
-  ! the PROFD2 modification, which were constants before).  An older TXLOAD stops
+  ! the PROFD2 modification, which were constants before, 5: the SOL transport
+  ! connection MDLSOLT and its inputs).  An older TXLOAD stops
   ! before the records it does not know; TXLOAD reads each one only when it is present.
   ! FSTPTM was missing from the layout although FSVAHL and the other FS* inputs are in it.
   write(io) 1, MDLNSUP
   write(io) 2, RWALL, RWALLZ, RWALLIZ
   write(io) 3, FSTPTM(1:NSM)
   write(io) 4, PROFD2C, PROFD2W
+  write(io) 5, MDLSOLT, DSOLT, CHISOLT(1:NSM), RMUSOLT(1:NSM), WSOLT
   close(io)
   write(6,*) '# DATA WAS SUCCESSFULLY SAVED IN THE FILE.'
 
@@ -365,7 +367,8 @@ subroutine TXLOAD(IST)
        & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,rIP,thrp,kappa,CPsi,VPoynt,PoyntI, &
        & ErV,PTsV_FIX,PNsV_FIX,ErV_FIX, &
        & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM,bdf_history_ready,stdin_ended, &
-       & MDLNSUP, PNsSUPlast, RWALL, RWALLZ, RWALLIZ, FSTPTM, PROFD2C, PROFD2W
+       & MDLNSUP, PNsSUPlast, RWALL, RWALLZ, RWALLIZ, FSTPTM, PROFD2C, PROFD2W, &
+       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT
   use tx_init, only : TXCALM
   use tx_graphic, only : allocate_txgraf,deallocate_txgraf, &
        &                 MODEG,MODEGL,NGYTM,NGYVM,NGR,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP, &
@@ -385,6 +388,9 @@ subroutine TXLOAD(IST)
   real(8), dimension(3) :: rwall_load
   real(8), dimension(NSM) :: fstptm_load
   real(8), dimension(2) :: profd2_load
+  integer(4) :: mdlsolt_load
+  real(8) :: dsolt_load, wsolt_load
+  real(8), dimension(NSM) :: chisolt_load, rmusolt_load
   logical :: LEX
 
   do 
@@ -485,6 +491,15 @@ subroutine TXLOAD(IST)
            read(io,iostat=istx) iextver, profd2_load(1:2)
            if( istx == 0 .and. iextver >= 4 ) then
               PROFD2C = profd2_load(1) ; PROFD2W = profd2_load(2)
+              read(io,iostat=istx) iextver, mdlsolt_load, dsolt_load, chisolt_load(1:NSM), &
+                   & rmusolt_load(1:NSM), wsolt_load
+              if( istx == 0 .and. iextver >= 5 ) then
+                 MDLSOLT = mdlsolt_load ; DSOLT = dsolt_load ; WSOLT = wsolt_load
+                 CHISOLT(1:NSM) = chisolt_load(1:NSM) ; RMUSOLT(1:NSM) = rmusolt_load(1:NSM)
+              else
+                 write(6,'(A,I2)') ' ## No record of the SOL transport connection in the file: MDLSOLT kept at', &
+                      & MDLSOLT
+              end if
            else
               write(6,'(A,2F6.3)') ' ## No record of PROFD2C, PROFD2W in the file: kept at', PROFD2C, PROFD2W
            end if
