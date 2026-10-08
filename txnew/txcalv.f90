@@ -1024,10 +1024,6 @@ contains
 !               &     'Q=',Q(NR),'S=',S(NR),'FCDIM=',FCDIM(NR),'Dturb=',Dturb
 
           end select
-          ! the separatrix value that the SOL takes (FSPCL /= 0): by the node index NRA,
-          ! not by an exact comparison of Rho with 1; the loop runs outward, so it is
-          ! set before the SOL nodes use it
-          if(NR == NRA) DturbA = Dturb
        else
           rG1h2(NR)   = 0.d0
           FCDBM(NR)   = 0.d0
@@ -1035,6 +1031,10 @@ contains
           FCDIM(NR)   = 0.d0
           Dturb       = 0.d0
        end if
+       ! the separatrix value that the SOL takes (every FSPCL): by the node index NRA,
+       ! not by an exact comparison of Rho with 1; the loop runs outward, so it is
+       ! set before the SOL nodes use it (zero without FSANOM)
+       if(NR == NRA) DturbA = Dturb
 
        !     *** Turbulent transport of particles ***
        !     ***     Wave-particle interaction    ***
@@ -1047,8 +1047,12 @@ contains
                & + FSANOM(1) * Dturb
        else
           if(FSPCL(1) == 0.d0) then
-             ! Bohm-like diffusivity
-             factor_bohm = (FSDFIX(1) * PROFD + PROFDB + FSANOM(1) * Dturb) &
+             ! Bohm-like diffusivity: the whole core coefficient at rho = 1 (FSDFIX(1) * PROFD
+             ! + PROFDB is diff_prof at rho = 1, PROFD2 being zero there) scaled by the Bohm
+             ! value T_e/(16 e B) relative to the separatrix.  The anomalous part is the
+             ! separatrix value DturbA, not the CDBM/CDIM value of the SOL node, which the
+             ! closed-surface models do not describe (the CDBM value nearly vanishes there).
+             factor_bohm = (FSDFIX(1) * PROFD + PROFDB + FSANOM(1) * DturbA) &
                   &  / (Var(NRA,1)%T * rKeV / (16.d0 * AEE * sqrt(bbt(NRA))))
              DeL = factor_bohm * Var(NR,1)%T * rKeV / (16.d0 * AEE * BBL)
           else
@@ -1087,7 +1091,7 @@ contains
 !pedestal          if(rho(nr) > 0.9d0) DeL = DeL * exp(-120.d0*(rho(nr)-0.9d0)**2)
        else
           if(FSPCL(2) == 0.d0) then
-             factor_bohm = (FSDFIX(2) * PROFML + PROFMB + FSANOM(2) * Dturb) &
+             factor_bohm = (FSDFIX(2) * PROFML + PROFMB + FSANOM(2) * DturbA) &
                   &  / (Var(NRA,1)%T * rKeV / (16.d0 * AEE * sqrt(bbt(NRA))))
 !bohm_model2             DeL =  (1.d0 - MOD(FSBOHM,2.d0)) * FSDFIX(2) * PROFML &
 !bohm_model2                  &+ FSBOHM * Var(NR,1)%T * rKeV / (16.d0 * AEE * BBL)
@@ -1145,7 +1149,7 @@ contains
 !pedestal          if(rho(nr) > 0.9d0) DeL = DeL * exp(-120.d0*(rho(nr)-0.9d0)**2)
        else
           if(FSPCL(3) == 0.d0) then
-             factor_bohm = (FSDFIX(3) * PROFCL + PROFCB + FSANOM(3) * Dturb) &
+             factor_bohm = (FSDFIX(3) * PROFCL + PROFCB + FSANOM(3) * DturbA) &
                   &  / (Var(NRA,1)%T * rKeV / (16.d0 * AEE * sqrt(bbt(NRA))))
 !bohm_model2             DeL =  (1.d0 - MOD(FSBOHM,2.d0)) * FSDFIX(3) * PROFCL &
 !bohm_model2                  &+ FSBOHM * Var(NR,1)%T * rKeV / (16.d0 * AEE * BBL)
