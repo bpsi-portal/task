@@ -2579,7 +2579,8 @@ outward).  The pinch is
   \qquad \frac{R_0}{L_n} = -R_0\,\frac{d\ln n_\r{e}}{d\rho_V},
   \label{eq:v562pinch}
 \end{equation}
-where $\rho_V$ is the volume radius and $n_\r{e}$ is smoothed as before.
+where $\rho_V$ is the volume radius; $d\ln n_\r{e}/d\rho_V$ is smoothed by a Savitzky--Golay
+filter (see the item on smoothing in Sec.~\ref{sec:v552other}).
 
 \paragraph{Origin and range of the scaling.}  The multi-machine scaling of Tala
 et al.\ \cite{Tala2012} is $-R_0V_\r{pinch}/\chi_\phi = 1.1\,R/L_n + 1.0$, both terms
@@ -2713,6 +2714,114 @@ Coriolis-type alternative with a geometric dependence ($-R_0V/\mu\propto\sqrt{r/
 used for DTT \cite{Casiraghi2021}) rotates the JT-60U case 30\% more slowly; its
 coefficient is a calibration, not a universal constant, and it is not implemented in
 the production code.
+
+
+\section{Anomalous transport in the SOL of V5.62}
+\setcounter{equation}{0}
+\label{sec:v562sol}
+
+Inside the separatrix the anomalous coefficients of particles ($k=1$), toroidal
+momentum ($k=2$) and heat ($k=3$) are
+\begin{equation}
+  C_{k,s}(\rho) = C_{0,s}\left[\texttt{FSDFIX}_k\,f_k(\rho) + B_k + \texttt{FSANOM}_k\,D_\r{turb}(\rho)\right],
+  \label{eq:v562core}
+\end{equation}
+where $C_{0,s}$ is \texttt{Dfs0}, \texttt{rMus0} or \texttt{Chis0} of species $s$, $f_k$ the
+fixed profile ($1+(\texttt{PROF}-1)\rho^{\texttt{PROF1}}$, with the Gaussian modification
+\texttt{PROFD2} for $k=1$), $B_k$ the offset \texttt{PROFDB}, \texttt{PROFMB} or
+\texttt{PROFCB}, and $D_\r{turb}$ the CDBM (\texttt{MDANOM} = 1) or CDIM (2) value.  Only
+\texttt{Dfs(:,1)} enters the particle transport.  The turbulence models describe closed
+flux surfaces.  On the open field lines of the SOL ($\rho\ge1$, from the separatrix node
+\texttt{NRA}; the mesh puts $\rho = 1$ exactly on it for any \texttt{rhoaccum}) the
+coefficient is built from the separatrix value $C^\r{core}_{k,s}(1)$, Eq.~(\ref{eq:v562core})
+at $\rho=1$ with $D_\r{turb}$ of the node \texttt{NRA} (the \texttt{PROFD2} modification is
+zero there).
+
+\subsection{\texttt{MDLSOLT} = 0 (default): \texttt{FSPCL}}
+
+\begin{center}
+\begin{tabular}{|c|l|}\hline
+\texttt{FSPCL}$_k$ & SOL coefficient \\\hline
+1 (default) & $C^\r{core}_k(1)$, constant \\
+0 & $C^\r{core}_k(1)\,D_\r{B}(\rho)/D_\r{B}(1)$, $D_\r{B} = T_\r{e}/(16eB)$ \\
+other & $\texttt{FSPCL}_k\,C_0[\texttt{FSDFIX}_k f_k(1) + B_k]$ without \texttt{FSANOM};
+        $C_0\,\texttt{FSANOM}_k\,D_\r{turb}(1)$ with it \\\hline
+\end{tabular}
+\end{center}
+
+In V5.62 the first two rows take the whole separatrix coefficient, as the table states;
+before, they used only parts of it when \texttt{FSANOM} was on.  With \texttt{FSPCL} = 1 the
+SOL took $C_0\,\texttt{FSANOM}_k D_\r{turb}(1)$ alone, so with \texttt{FSDFIX} and
+\texttt{FSANOM} both on the coefficient stepped down at the separatrix (\texttt{NRMAX} = 60
+with NBI: $D$ from 1.51 to 0.76 and $\chi$ from 5.51 to 1.11\,m$^2$/s at $t=0$).  With
+\texttt{FSPCL} = 0 the anomalous part was $D_\r{turb}$ of each SOL node, the closed-surface
+model evaluated where it does not apply; the CDBM value nearly vanishes there, the SOL
+transport dropped with \texttt{FSANOM}, and the Picard iteration converged badly
+(\texttt{NRMAX} = 60, \texttt{FSANOM} only, 1\,s: mean number of sweeps 20.3 and 756 retried
+steps with NBI, 69.8 and 8802 without; now 14.8 and 8.1 sweeps and no retry).  \texttt{FSDFIX}
+alone gives the same results as before in both rows, and the third row is unchanged.
+
+\subsection{\texttt{MDLSOLT} = 1: connection to far-SOL values}
+
+With \texttt{MDLSOLT} = 1 the SOL coefficients of $D$, $\chi_s$ and $\mu_s$ are
+\begin{equation}
+  C_s(\rho) = C_{\r{SOL},s} + \left[C^\r{core}_s(1) - C_{\r{SOL},s}\right]
+  \exp\!\left(-\frac{\rho-1}{w}\right),\qquad \rho\ge1,
+  \label{eq:v562solt}
+\end{equation}
+with $C_\r{SOL}$ = \texttt{DSOLT} (for \texttt{Dfs(:,1)}), \texttt{CHISOLT}$(s)$ and
+\texttt{RMUSOLT}$(s)$ in m$^2$/s and $w$ = \texttt{WSOLT} in units of $\rho$; at the outer
+midplane $\Delta r\approx a\,w$ (ellipticity and Shafranov shift ignored).  $C^\r{core}_s(1)$
+is the separatrix value above.  The code evaluates Eq.~(\ref{eq:v562solt}) as the convex
+combination $C^\r{core}_s(1)\,e^{-x} + C_{\r{SOL},s}(1-e^{-x})$, $x=(\rho-1)/w$, so $C$ equals
+$C^\r{core}_s(1)$ exactly at \texttt{NRA} and stays positive.  \texttt{FSPCL} is not used
+(a warning is printed if any \texttt{FSPCL} $\neq$ 1), so the Bohm-like row is not taken
+either.  \texttt{FSPCL} = 1 is the limit $w\to\infty$.
+
+The connection is phenomenological.  It separates what \texttt{FSPCL} ties together: the
+core model fixes the coefficient at the separatrix, but nothing in the code predicts the
+cross-field transport of the far SOL, which edge codes also prescribe rather than compute.
+The four inputs therefore have no universally
+recommended values: they are unset ($-1$) by default and \texttt{MDLSOLT} = 1 stops with an
+input error unless they are all positive.  For orientation only, predictive edge
+calculations for ITER commonly take spatially uniform $D_\perp = 0.3$ and
+$\chi_\r{e}=\chi_\r{i} = 1.0$\,m$^2$/s with a perpendicular viscosity of 0.2\,m$^2$/s
+\cite{Rivals2025}, and the one integrated-modelling connection of a core separatrix value
+to such values that we found, in JINTRAC \cite{Tholerus2025}, is an exponential relaxation
+with an e-folding length of 1.3\,cm at the outer midplane (about $\Delta\rho = 0.016$ for
+$a = 0.8$\,m) when the separatrix value exceeds the far-SOL value; below a transport barrier
+it uses a flat extension and a tanh rise instead, which \texttt{MDLSOLT} = 1 does not model.
+
+About four elements outside the separatrix within $w$ resolve the connection (a guide,
+not a requirement).  A warning is printed when $w$ is less than two elements (checked
+once the mesh is built; with \texttt{rhoaccum} $\ge 0$ the mesh is not refined at the
+separatrix, e.g.\ 0.0095 against 0.0052 at \texttt{NRMAX} = 60 with \texttt{rhoaccum} =
+0.95), and when $e^{-(\rho_b-1)/w} > 0.05$, i.e.\ more than 5\% of
+$C^\r{core}(1) - C_\r{SOL}$ remains at the wall.  \texttt{MDLSOLT} = 1 is an input error
+with \texttt{MDANOM} = 3 (MMM95 sets the SOL coefficients itself).  The inputs are kept in a
+fifth extension record of the save file; an older file leaves them as they are, and an
+older build stops before the record.
+
+Validation (\texttt{NRMAX} = 60, 3.2\,MW NBI and CDBM unless stated, with the test values
+$D_\r{SOL}=0.3$, $\chi_\r{SOL}=\mu_\r{SOL}=1$\,m$^2$/s and $w=0.02$, which are not defaults).
+\texttt{MDLSOLT} = 0 is bit-identical to the code without the option.  Against
+\texttt{FSPCL} = 1 at 1\,s the connection raises $T_\r{e}(1)$ by 7\%, $T_\r{i}(1)$ by 22\%,
+$u_{\r{i}\phi}(0.9)$ by 10\% and $u_{\r{i}\phi}(1)$ by 28\%, lowers $T_\r{i}$ at $\rho=1.05$ by
+13\%, and changes the core by less than 2\%.  The same changes within 1\% are found with fixed
+transport and at \texttt{NRMAX} = 120; at 0.2\,s \texttt{NRMAX} = 60, 120 and 240 give $T_\r{i}(1)$
++19 to +20\% and $u_{\r{i}\phi}(1)$ +22 to +24\%.  Without NBI the changes are about 1\% with
+CDBM, whose separatrix value is then close to the far-SOL values, and 11\% in $T_\r{i}(1)$ with
+fixed transport.  \texttt{NRMAX} = 60 and 120 agree to 1\% inside the separatrix with either
+treatment.  The mean number of Picard sweeps changes by less than 2\%, and the few retried steps
+are of the isolated type in the carbon superstage seen with \texttt{FSPCL} = 1.  Doubling one
+far-SOL value at a time (0.5\,s): $\mu_\r{SOL}$ changes only the rotation ($u_{\r{i}\phi}(1)$
+$-9$\%, $+45$\% near the wall; densities and temperatures unchanged to 0.05\%), $\chi_\r{SOL}$
+mainly the temperatures ($T_\r{i}(1)$ $-6$\%, $+23$\% near the wall), and $D_\r{SOL}$ the density
+by less than 1\% (the SOL density is set by the parallel loss and the recycling source);
+doubling $w$ changes $T_\r{i}(1)$ and $u_{\r{i}\phi}(1)$ by $-8$ and $-10$\%.  The particle,
+momentum and energy budgets close to $10^{-10}$ of the largest term.  With 6.4\,MW the option is
+not verified: there CDBM fails near the axis at 0.4--0.6\,s with either SOL treatment, as it
+does in the code before these changes.
 
 
 \section{Beam and ripple model of V5.61}
@@ -3764,6 +3873,33 @@ either case.
   slow neutrals have not reached the wall and the edge of the $n_{02}$ source region came from
   $0/0$, i.e.\ from comparisons with NaN; it now stays at the separatrix by an explicit test.
   Default runs are bit-identical.
+\item Smoothing.  The Savitzky--Golay smoothing of $d\ln n_\r{e}/d\rho_V$ (momentum pinch) and
+  of $dE_r/dr$ (ExB shear of CDBM and CDIM) in \texttt{TXCALC} was not applied: the number of
+  points to the right shared its name with the loop variable \texttt{NR} (Fortran does not
+  tell the two apart), so the filter got $\texttt{NRMAX}+1$ points to the right and returned
+  the data unchanged.  The filter itself treated the ends differently from the interior: the
+  first \texttt{nl} points summed the weights that fall inside the data without
+  renormalizing them (a constant came out as 0.67 of itself on the axis), and the last
+  \texttt{nr} points were not smoothed.  The end points now take the least-squares polynomial
+  of the same order over the $\texttt{nl}+\texttt{nr}+1$ points next to the end: polynomials up
+  to that order are reproduced, and the noise gain is 0.5--0.97 there (0.95 at the end point
+  itself) against 0.58 inside.  The interior is unchanged, and the points are taken as equally
+  spaced in the index, not in $\rho$.  The changed points are not used by the pinch (replaced
+  by a linear interpolation inside $\rho = 0.1$ and tapered to zero beyond \texttt{RhoPch2}), so
+  runs without ExB shear (\texttt{FSCBSH} = 0), with \texttt{FSLC} = 0 and \texttt{MDOSQZ}
+  $\le 10$ are bit-identical to those with the old ends.  With ExB shear the axis node now takes $dE_r/dr$ there almost unsmoothed (it was scaled
+  down by the defect): \texttt{FSCBSH} = 1 changes by $10^{-4}$ ($2\times10^{-3}$ in the rotation)
+  at \texttt{NRMAX} = 60 and by $10^{-5}$ at 120 and 240.  The orbit-loss rate
+  (\texttt{FSLC} $\neq 0$) peaks at the separatrix and falls by orders of magnitude within a few
+  elements; the filter rings there in the interior as before (down to $-5$\% of the peak), and
+  the end windows now continue the ringing near the wall ($\pm0.3$\%).
+  The same filter smooths the initial profiles read from file with \texttt{MDINTT},
+  \texttt{MDINTN}, \texttt{MDINTC} = $-2$: the first point of the smoothed region lost 35\% of
+  the density and 37\% of the current density, and is now continuous with the unsmoothed
+  part.  There the same name conflict, with the initialized (hence saved) declarations, left
+  the edge unsmoothed in a second initialization in the same run; a restart (\texttt{R}
+  answered with ``y'') now reproduces the first initialization, and it no longer stops on
+  an allocation of \texttt{array\_init\_NRNS} that was never freed.
 \end{itemize}
 
 \begin{thebibliography}{9}
@@ -3778,6 +3914,8 @@ either case.
 \bibitem{Weisen2012} H. Weisen et al., Nucl. Fusion \textbf{52} (2012) 042001; \textbf{52} (2012) 114024.
 \bibitem{Honda2013} M. Honda et al., Nucl. Fusion \textbf{53} (2013) 073050.
 \bibitem{Casiraghi2021} I. Casiraghi et al., Nucl. Fusion \textbf{61} (2021) 116068.
+\bibitem{Rivals2025} Rivals et al., Nucl. Fusion \textbf{65} (2025) 026038.
+\bibitem{Tholerus2025} Tholerus et al., Nucl. Fusion \textbf{65} (2025) 036006 (arXiv:2408.01222).
 \end{thebibliography}
 
 \end{document}
