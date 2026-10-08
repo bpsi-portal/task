@@ -1401,7 +1401,12 @@ contains
     ! === Temperature and pressure profiles ===
     if( MDINTT1 == -2 ) then
        block
-         integer :: nl = 5, nr = 5, m = 4, ld = 0, iflag, imax
+         ! nrs and constants, not an initialized nr: Fortran does not tell nr from NR, the
+         ! loops over NR below made nr their control variable, and the implied SAVE kept it
+         ! at NRMAX+1, so a second initialization in the same run was not smoothed.  The
+         ! loops keep an NR of their own, as before.
+         integer, parameter :: nl = 5, nrs = 5, m = 4, ld = 0
+         integer :: iflag, imax, NR
 
          allocate(ProfRS, mold=array_init_NRNS)
 
@@ -1423,11 +1428,11 @@ contains
 !!$               X(NR,LQi5) = moving_average(NR,ProfRS(:,2),NRMAX) * X(NR,LQi1)
 !!$               X(NR,LQz5) = moving_average(NR,ProfRS(:,3),NRMAX) * X(NR,LQz1)
 !!$            end do
-            call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,1),iflag)
+            call savgol_filter(nl,nrs,ld,m,imax,ProfRS(NR_smt:NRMAX,1),iflag)
             if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
-            call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,2),iflag)
+            call savgol_filter(nl,nrs,ld,m,imax,ProfRS(NR_smt:NRMAX,2),iflag)
             if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
-            call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,3),iflag)
+            call savgol_filter(nl,nrs,ld,m,imax,ProfRS(NR_smt:NRMAX,3),iflag)
             if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             do NR = NR_smt, NRMAX
                X(NR,LQe5) = ProfRS(NR,1) * X(NR,LQe1)
@@ -1440,11 +1445,11 @@ contains
 !!$               X(NR,LQi5) = moving_average(NR,ProfRS(:,2),NRMAX)
 !!$               X(NR,LQz5) = moving_average(NR,ProfRS(:,3),NRMAX)
 !!$            end do
-            call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,1),iflag)
+            call savgol_filter(nl,nrs,ld,m,imax,ProfRS(NR_smt:NRMAX,1),iflag)
             if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
-            call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,2),iflag)
+            call savgol_filter(nl,nrs,ld,m,imax,ProfRS(NR_smt:NRMAX,2),iflag)
             if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
-            call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,3),iflag)
+            call savgol_filter(nl,nrs,ld,m,imax,ProfRS(NR_smt:NRMAX,3),iflag)
             if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             do NR = NR_smt, NRMAX
                X(NR,LQe5) = ProfRS(NR,1)
@@ -1519,7 +1524,9 @@ contains
        end if
 
        block
-         integer :: nl = 5, nr = 5, m = 4, ld = 0, iflag, imax
+         ! as for the temperatures above
+         integer, parameter :: nl = 5, nrs = 5, m = 4, ld = 0
+         integer :: iflag, imax, NR
 
          ProfR(:) = X(:,LQe1)
          NR_smt = NRA - NR_smt_start ! smoothing data only in the edge region
@@ -1529,7 +1536,7 @@ contains
 !!$            X(NR,LQi1) = faci * X(NR,LQe1) ! Ni
 !!$            X(NR,LQz1) = facz * X(NR,LQe1) ! Nz
 !!$         end do
-         call savgol_filter(nl,nr,ld,m,imax,ProfR(NR_smt:NRMAX),iflag)
+         call savgol_filter(nl,nrs,ld,m,imax,ProfR(NR_smt:NRMAX),iflag)
          if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
          do NR = NR_smt, NRMAX
             X(NR,LQe1) = ProfR(NR)
