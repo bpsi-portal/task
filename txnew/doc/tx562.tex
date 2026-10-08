@@ -2812,8 +2812,9 @@ transport and at \texttt{NRMAX} = 120; at 0.2\,s \texttt{NRMAX} = 60, 120 and 24
 +19 to +20\% and $u_{\r{i}\phi}(1)$ +22 to +24\%.  Without NBI the changes are about 1\% with
 CDBM, whose separatrix value is then close to the far-SOL values, and 11\% in $T_\r{i}(1)$ with
 fixed transport.  \texttt{NRMAX} = 60 and 120 agree to 1\% inside the separatrix with either
-treatment.  The mean number of Picard sweeps changes by less than 2\%, and the few retried steps
-are of the isolated type in the carbon superstage seen with \texttt{FSPCL} = 1.  Doubling one
+treatment.  The mean number of Picard sweeps changes by 2\% or less, and the few retried steps
+(at most six in a run) are isolated and of the kinds also seen with \texttt{FSPCL} = 1 (carbon
+superstage, ion momentum near the separatrix or on the axis).  Doubling one
 far-SOL value at a time (0.5\,s): $\mu_\r{SOL}$ changes only the rotation ($u_{\r{i}\phi}(1)$
 $-9$\%, $+45$\% near the wall; densities and temperatures unchanged to 0.05\%), $\chi_\r{SOL}$
 mainly the temperatures ($T_\r{i}(1)$ $-6$\%, $+23$\% near the wall), and $D_\r{SOL}$ the density
@@ -3889,7 +3890,7 @@ either case.
   runs without ExB shear (\texttt{FSCBSH} = 0), with \texttt{FSLC} = 0 and \texttt{MDOSQZ}
   $\le 10$ are bit-identical to those with the old ends.  With ExB shear the axis node now takes $dE_r/dr$ there almost unsmoothed (it was scaled
   down by the defect): \texttt{FSCBSH} = 1 changes by $10^{-4}$ ($2\times10^{-3}$ in the rotation)
-  at \texttt{NRMAX} = 60 and by $10^{-5}$ at 120 and 240.  The orbit-loss rate
+  at \texttt{NRMAX} = 60 and by $10^{-5}$ ($2$--$3\times10^{-4}$ in the rotation) at 120 and 240.  The orbit-loss rate
   (\texttt{FSLC} $\neq 0$) peaks at the separatrix and falls by orders of magnitude within a few
   elements; the filter rings there in the interior as before (down to $-5$\% of the peak), and
   the end windows now continue the ringing near the wall ($\pm0.3$\%).
