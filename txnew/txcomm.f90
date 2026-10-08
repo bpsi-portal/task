@@ -316,6 +316,12 @@ module tx_commons
 !!rp_conv       &, PNbrpLV
 
   real(8), dimension(:), allocatable :: ErV_FIX
+  !   ddPhidpsi = d/dpsi(dPhi/dpsi) and gr2phi = (dpsi/dV)^2 ddPhidpsi MDOSQZN, for the
+  !   orbit squeezing, NCLASS and the ExB shearing rate wexb.  TXCALC sets them at
+  !   IC <= ICCALC (IC = 0 after TXPROF and TXLOAD) and, with MDOSQZ = 1, 11, keeps
+  !   them for the later sweeps of the step, so they live with the other lagged
+  !   quantities and are allocated and freed with them.
+  real(8), dimension(:), allocatable :: ddPhidpsi, gr2phi
 
   ! Species variables
   type species_var
@@ -519,7 +525,7 @@ contains
        if (ier == 0) then ; ierl(:) = 0 ; else ; exit ; end if
 
        ! For numerical stabilization
-       allocate(ErV_FIX,  pres0,    ErV0,                               source=array_init_NR,   stat=ierl(1))
+       allocate(ErV_FIX,  pres0,    ErV0,     ddPhidpsi, gr2phi,       source=array_init_NR,   stat=ierl(1))
        allocate(PNsV_FIX, PTsV_FIX,                                     source=array_init_NRNS, stat=ierl(2))
        ier = sum(ierl) ; iflag = 3
        if (ier == 0) then ; ierl(:) = 0 ; else ; exit ; end if
@@ -662,7 +668,7 @@ contains
     deallocate(PsidotV,PsitdotV,dPhidV, dPhidrho, bbt, bthco, Zeff)
     deallocate(Var)
 
-    deallocate(ErV_FIX, pres0,  ErV0)
+    deallocate(ErV_FIX, pres0,  ErV0, ddPhidpsi, gr2phi)
     deallocate(PNsV_FIX, PTsV_FIX)
 
     deallocate(rNuION, rNu0b,  rNuL,   rNuiCX,  rNubCX,  rNuiCXT)

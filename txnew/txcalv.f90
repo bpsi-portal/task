@@ -355,7 +355,6 @@ contains
          &     RhoSOL, V0ave, Viave, DturbA, fsolt, rLmean, Sitot, &
          &     rGCIM, rGIM, rHIM, OMEGAPR !09/06/17~ miki_m
 !!$    real(8) ::Cs, Lc, PTiVA, Chicl, 
-    real(8), dimension(0:NRMAX) :: gr2phi
     real(8), dimension(1:NHFMmx) :: EpsLM 
 !    real(8) :: rLmeanL, QL, rNuAsE_inv 
     real(8), save :: Fcoef = 1.d0
@@ -365,7 +364,7 @@ contains
     real(8) :: zrNuee, zxi, znusteinv, zLamEZ, zCRZ, zsigma0, zsigmaneo
     real(8) :: rhoni, dvexbdr ! CDBM
     real(8) :: xb, fp, fdp, gfun
-    real(8), dimension(0:NRMAX) :: pres, ddPhidpsi, tmp
+    real(8), dimension(0:NRMAX) :: pres, tmp
     real(8) :: Scdbm   ! magnetic shear in the form CDBM takes, (r/q)dq/dr
     ! Mainly for derivatives
     ! NOTE:
@@ -591,6 +590,8 @@ contains
     !      where rho is an arbitrary radial coordinate.
     !                      ^^^^^^^^^
     !   gr2phi = (dpsi/dV)^2 d/dpsi(dPhi/dpsi) if rho = V is assumed.
+    !   With MDOSQZ = 1, 11 the values of the last sweep with IC <= ICCALC are kept
+    !   (ddPhidpsi and gr2phi are arrays of tx_commons, not local to this routine).
     if( mod(MDOSQZ,10) /= 1 .or. IC <= ICCALC ) THEN
        ddPhidpsi(0) = 0.d0 ! d/dpsi(dPhi/dpsi)
        do NR = 1, NRMAX-1
