@@ -18,6 +18,10 @@ contains
     ! y(n1):: input/output, real values, the data to be smoothed.
     !  flag:: output, integer, error message, 0=success, 1=failure.
     !-----------------------------------------------------------------------------------
+    ! The points are taken as equally spaced: on a non-uniform mesh the polynomial is
+    ! fitted in the index, not in the coordinate.  For ld = 0 every point is smoothed,
+    ! the first nl and the last nr points with the window shifted inside the data.
+    !-----------------------------------------------------------------------------------
     ! Author: Peng Jun, 2019.03.26.
     ! Modified by HONDA Mitsuru
     !-----------------------------------------------------------------------------------
@@ -64,7 +68,47 @@ contains
     if( ld /= 0 ) then
        y(1:nl) = y(nl+1)
        y(n1-nr+1:n1) = y(n1-nr)
+       return
     end if
+
+    ! The first nl and the last nr points: the loop above truncated the window at the
+    ! left end without renormalizing it (a constant came out as 0.67 of itself at the
+    ! first point) and did not reach the last nr points.  Use there the same number of
+    ! points and the same polynomial order with the window shifted to lie inside the
+    ! data: the least-squares polynomial of the nl+nr+1 points next to the end, evaluated
+    ! at the point.  It reproduces polynomials up to order m, constants in particular;
+    ! the interior points are those of the loop above.  With fewer than nl+nr+1 points
+    ! there is no such window and the data are returned unchanged.
+    if (n1 < nl+nr+1) then
+       y(1:min(nl,n1)) = y0(1:min(nl,n1))
+       return
+    end if
+    do i=1, nl
+       call smooth_at(i, i-1, nl+nr-(i-1))
+    end do
+    do i=n1-nr+1, n1
+       call smooth_at(i, nl+nr-(n1-i), n1-i)
+    end do
+
+  contains
+
+    subroutine smooth_at(ip, nlb, nrb)
+      integer(int32), intent(in) :: ip, nlb, nrb
+      integer(int32) :: jj, xlb(nlb+nrb+1)
+      real   (dp)    :: cb(nlb+nrb+1)
+      xlb(1) = 0
+      do jj=1, nlb
+         xlb(jj+1) = -jj
+      end do
+      do jj=1, nrb
+         xlb(1+nlb+jj) = nrb-jj+1
+      end do
+      call savgol(nlb,nrb,0,m,cb,flag)
+      y(ip) = 0.0_dp
+      do jj=1, nlb+nrb+1
+         y(ip) = y(ip) + cb(jj)*y0(ip+xlb(jj))
+      end do
+    end subroutine smooth_at
 
   end subroutine savgol_filter
 
