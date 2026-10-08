@@ -639,6 +639,9 @@ contains
     if( .not. allocated(array_init_NR) ) return
 
     deallocate(array_init_NR)
+    ! allocated next to array_init_NR; left allocated, it made the allocation of a
+    ! restart (R with "y") fail with category 1
+    if(allocated(array_init_NRNS)) deallocate(array_init_NRNS)
     deallocate(vv,      rho)
     deallocate(hv)
 
