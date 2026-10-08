@@ -487,7 +487,12 @@ contains
     dQdrho(:) = vro(:) * dfdx(vv,Q,NRMAX,0)
 
     block
-      integer :: nl = 5, nr = 5, m = 4, ld = 0, iflag
+      ! nrs, not nr: Fortran does not tell nr from NR, and the loop over NR below
+      ! made a local nr its control variable, so the filters were called with
+      ! nr = NRMAX+1 points to the right and returned the data unchanged.  The loop
+      ! keeps a variable of its own, so the NR of the procedure is not touched.
+      integer :: nl = 5, nrs = 5, m = 4, ld = 0, iflag
+      integer :: NR
 
       ! (1/ne)dne/drho_v
       dlnNedrhov(0) = 0.d0
@@ -495,7 +500,7 @@ contains
          dlnNedrhov(NR) = 2.d0 * vlt(NR) / ( rhov(NR) * Var(NR,1)%n ) * dNsdV(NR,1)
       end do
       ! smoothing 1/Lne
-      call savgol_filter(nl,nr,ld,m,NRMAX+1,dlnNedrhov,iflag)
+      call savgol_filter(nl,nrs,ld,m,NRMAX+1,dlnNedrhov,iflag)
       if( iflag /= 0 ) stop 'savgol_filter error for dlnNedrhov in txcalc.'
       
       !  Smoothing Er gradient for numerical stability
@@ -510,7 +515,7 @@ contains
 !!$      do NR = 0, NRMAX
 !!$         dErdrS(NR) = moving_average(NR,dErdr,NRMAX,NRA)
 !!$      end do
-      call savgol_filter(nl,nr,ld,m,NRA+1,dErdrS(0:NRA),iflag)
+      call savgol_filter(nl,nrs,ld,m,NRA+1,dErdrS(0:NRA),iflag)
       if( iflag /= 0 ) stop 'savgol_filter error for dErdrS in txcalc.'
     end block
 
