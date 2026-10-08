@@ -1055,8 +1055,13 @@ contains
              if(FSANOM(1) == 0.d0) then
                 ! Fixed value and fixed profile
                 DeL = FSPCL(1) * diff_prof(RhoSOL,FSDFIX(1),PROFD,PROFD1,PROFDB,0.d0)
+             else if(FSPCL(1) == 1.d0) then
+                ! The whole core coefficient at rho = 1 carried into the SOL: the fixed
+                ! profile (PROFD2 is zero there), the offset and the anomalous part
+                DeL = diff_prof(RhoSOL,FSDFIX(1),PROFD,PROFD1,PROFDB,PROFD2,PROFD2C,PROFD2W) &
+                     & + FSANOM(1) * DturbA
              else
-                ! Theory-based anomalous diffusivity
+                ! Theory-based anomalous diffusivity (FSPCL /= 0, 1: as before)
                 DeL = FSANOM(1) * DturbA
              end if
           end if
@@ -1090,6 +1095,8 @@ contains
           else
              if(FSANOM(2) == 0.d0) then
                 DeL = FSPCL(2) * diff_prof(RhoSOL,FSDFIX(2),PROFML,PROFM1,PROFMB,0.d0)
+             else if(FSPCL(2) == 1.d0) then
+                DeL = diff_prof(RhoSOL,FSDFIX(2),PROFML,PROFM1,PROFMB,0.d0) + FSANOM(2) * DturbA
              else
                 DeL = FSANOM(2) * DturbA
              end if
@@ -1146,6 +1153,8 @@ contains
           else
              if(FSANOM(3) == 0.d0) then
                 DeL = FSPCL(3) * diff_prof(RhoSOL,FSDFIX(3),PROFCL,PROFC1,PROFCB,0.d0)
+             else if(FSPCL(3) == 1.d0) then
+                DeL = diff_prof(RhoSOL,FSDFIX(3),PROFCL,PROFC1,PROFCB,0.d0) + FSANOM(3) * DturbA
              else
                 DeL = FSANOM(3) * DturbA
              end if
