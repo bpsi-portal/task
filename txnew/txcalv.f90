@@ -1024,7 +1024,10 @@ contains
 !               &     'Q=',Q(NR),'S=',S(NR),'FCDIM=',FCDIM(NR),'Dturb=',Dturb
 
           end select
-          if(Rho(NR) == 1.d0) DturbA = Dturb 
+          ! the separatrix value that the SOL takes (FSPCL /= 0): by the node index NRA,
+          ! not by an exact comparison of Rho with 1; the loop runs outward, so it is
+          ! set before the SOL nodes use it
+          if(NR == NRA) DturbA = Dturb
        else
           rG1h2(NR)   = 0.d0
           FCDBM(NR)   = 0.d0
