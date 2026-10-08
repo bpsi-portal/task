@@ -35,7 +35,10 @@ contains
 
     !   Mesh accumulation radius (-)
     !     rhoaccum coincides with rho=1.d0 when rhoaccum is minus. (-1: default)
-    !     rhoaccum is valid when rhoaccum is plus.
+    !     rhoaccum is valid when 0 < rhoaccum < rhob.  rhoaccum = 0 or rhob would
+    !     accumulate the mesh on the axis or the wall node, which are fixed already
+    !     (the axis has its own refinement, CMESH0 and WMESH0), and the construction
+    !     that puts rhoaccum on a node breaks down there.
     rhoaccum = - 1.d0
 
     !   Plasma major radius (m), geometrically defined by (Rmax+Rmin)/2
@@ -1120,7 +1123,14 @@ contains
        end do
 
        !  Adjust rho=1.d0 on mesh
+       !  The mesh is accumulated at rhoaccum, and the node nearest rho = 1 can be the
+       !  wall node (e.g. rhoaccum = 1e-3 with NRMAX = 60), which leaves no SOL element.
 
+       if(NRL + 1 == NRMAX .and. abs(rho(NRL)-1.d0) >= abs(rho(NRL+1)-1.d0)) then
+          write(6,'(A,ES10.3,A)') 'XX TXCALM: with rhoaccum =', rhoaccum, &
+               & ' the separatrix falls on the wall node; change rhoaccum, CMESH, WMESH or NRMAX.'
+          stop
+       end if
        if(abs(rho(NRL)-1.d0) < abs(rho(NRL+1)-1.d0)) then
           NRA = NRL
           rhol = 0.5d0 * abs(rho(NRA) - 1.d0)
@@ -2314,7 +2324,7 @@ contains
           idx = idx + 1 ; end if
        ! Physical variables
        if(rhob <= 1.d0) then ; exit ; else ; idx = idx + 1 ; end if
-       if(rhoaccum > rhob) then ; exit ; else ; idx = idx + 1 ; end if
+       if(rhoaccum == 0.d0 .or. rhoaccum >= rhob) then ; exit ; else ; idx = idx + 1 ; end if
        if(RR <= rhob * ra) then ; exit ; else ; idx = idx + 1 ; end if
        if(rIPs < 0.d0 .or. rIPe < 0.d0) then ; exit ; else ; idx = idx + 1 ; end if
        if(minval(amas) < 0.d0) then ; exit ; else ; idx = idx + 1 ; endif
