@@ -3901,6 +3901,30 @@ either case.
   the edge unsmoothed in a second initialization in the same run; a restart (\texttt{R}
   answered with ``y'') now reproduces the first initialization, and it no longer stops on
   an allocation of \texttt{array\_init\_NRNS} that was never freed.
+\item Pressure gradient of CDBM on the axis.  $\alpha$ of CDBM (and CDIM) uses $dp/dr$ over the
+  minor radius.  Its axis value came from a one-sided four-point difference, which was also the end
+  condition of the spline; $p$ is even in $r$, so $dp/dr = 0$ on the axis is now imposed, as for
+  $d\Phi/d\rho$ ($dE_r/dr$ keeps its one-sided axis value, $E_r$ being odd).  With a flat or hollow
+  core pressure the one-sided value was large (6.4\,MW NBI: $+46$\,kPa/m on the axis against
+  $|dp/dr| < 4$\,kPa/m at the next node), and the CDBM coefficient of the axis node was hundreds of
+  times that of the next node.  Fixed transport is unchanged.  With CDBM and 3.2\,MW NBI the
+  profiles change by less than $4\times10^{-5}$ at 1\,s ($u_{\r{i}\phi}(0)$ by $-0.04$\%) with
+  \texttt{NRMAX} = 60 and by less than $5\times10^{-7}$ with 120 ($-0.003$\%).
+\item CDBM alone at high NBI power.  With \texttt{FSANOM} only (no \texttt{FSDFIX}, no offsets) the
+  anomalous $D$, $\chi$ and $\mu$ are those of CDBM, proportional to $|\alpha|^{3/2}$, and vanish
+  where the pressure gradient does.  With 6.4\,MW of NBI on the test case the thermal ions are
+  depleted near the axis: the electron flux driven by the friction with the beam and the inward beam
+  flux, which the thermal ions carry through ambipolarity, exceed the thermal-ion source inside
+  $\rho\approx0.05$, and a steady state then needs an inward turbulent flux, i.e.\ a hollow
+  thermal-ion density, the deeper the smaller $D$.  The core pressure flattens, the CDBM coefficients
+  vanish near the axis, and the run stops with a negative impurity density on the axis (0.50\,s with
+  \texttt{NRMAX} = 60, 0.35\,s with 120).
+  The code keeps the CDBM-alone model.  Fixed transport together with CDBM (\texttt{FSDFIX} with
+  \texttt{FSANOM}), or the offsets \texttt{PROFDB}, \texttt{PROFMB}, \texttt{PROFCB} = 0.1 in all
+  three channels, kept the same case stable; these are options for sensitivity studies.  The value
+  0.1 is a test value that stabilized this case and has no physical justification, and fixed
+  transport alongside CDBM is not a recommended standard setting.  \texttt{FSVAHL} = $-0.5$ instead
+  of $-0.25$ also removes the depletion; the default is kept.
 \end{itemize}
 
 \begin{thebibliography}{9}
