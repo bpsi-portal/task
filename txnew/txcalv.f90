@@ -457,8 +457,13 @@ contains
        deallocate(dErdr, dpdr, drhodrpt)
        allocate(dErdr, dpdr, drhodrpt, mold=array_init_NR)
     end if
+    ! E_r is odd in r, so dE_r/dr is finite on the axis and taken one-sided there.
+    ! The pressure is even in r: dp/dr = 0 on the axis is imposed (it is also the end
+    ! condition of the spline), instead of the one-sided four-point difference, which
+    ! with a flat or hollow core pressure gave a spurious dp/dr(0), hence alpha(0) and a
+    ! CDBM coefficient on the axis node far above that of the next node.
     dErdr(:) = dfdx(rpt,ErVlc,NRMAX,0)
-    dpdr (:) = dfdx(rpt,pres ,NRMAX,0)
+    dpdr (:) = dfdx(rpt,pres ,NRMAX,0,daxs=0.d0)
     ! drho/drpt, for turning the rho-based shear into the (r/q)dq/dr the CDBM
     ! model is written for; rpt is the radius dpdr and rs are already taken with.
     drhodrpt(:) = dfdx(rpt,rho  ,NRMAX,0)
