@@ -17,7 +17,6 @@ module tx_coefficients
   real(8), dimension(:,:,:), allocatable :: Ratden, zChi
   real(8) :: DTt, invDT, BeamSW, RpplSW, ThntSW, &
        &     fact = 1.d0 ! <= SOL loss accelerator
-  integer(4), save :: ICALA = 0!, ICALA2 = 0
   integer(4) :: L3, L6, L8
   ! Density equation of each thermal species, indexed the same way as Var(:,i).
   integer(4), parameter :: LQsn(1:NSM) = [ LQe1, LQi1, LQz1 ]
@@ -222,10 +221,6 @@ contains
 
     !     Dirichlet condition
 
-!    if(NTCUM >= 3) then
-!       if(NTCUM == 3 .and. ICALA2 == 0) then
-!          ICALA = 0 ; ICALA2 = 1
-!       end if
     call BOUNDARY(0    ,LQe2,0)
     call BOUNDARY(0    ,LQi2,0)
     call BOUNDARY(0    ,LQz2,0)
@@ -240,7 +235,6 @@ contains
     if(FSPARV(2) == 0.d0) call BOUNDARY(0    ,LQi3,0,Var(0,2)%RUph*bbt(0)/fipol(0))
     if(FSPARV(3) == 0.d0) call BOUNDARY(0    ,LQz3,0,Var(0,3)%RUph*bbt(0)/fipol(0))
     ! -----------------------------------------------------------
-!    end if
     call BOUNDARY(NRMAX,LQm1,0)
     call BOUNDARY(0    ,LQm2,0)
 !!!    call BOUNDARY(NRMAX,LQe2,0) ! Violates quasi-neutrality and breaks down calculation
@@ -307,8 +301,6 @@ contains
     call BOUNDARY(NRMAX,LQnz,1, suft(NRMAX)*rGASPFz &
          & + RWALLZ  * max(Var(NRMAX,3)%n * Var(NRMAX,3)%UrV, 0.d0) &
          & + RWALLIZ * max(Var(NRMAX,2)%n * Var(NRMAX,2)%UrV, 0.d0))
-
-    if(ICALA == 0) ICALA = 1
 
     call dump_axis_LQs8
     call dump_axis_row(LQz1,'LQz1    ')
@@ -4275,14 +4267,7 @@ contains
 
     integer(4), intent(in) :: NR, LQ, ID
     real(8), intent(in), optional :: VAL
-    integer(4), parameter :: NQMAXL = 50
-    integer(4) :: NQ, NC, I, NB
-    integer(4), save :: IMAX(1:NQM)
-    type list
-       integer(4) :: IDXNC
-       integer(4) :: IDXNQ
-    end type list
-    type(list), save :: IDX(1:50,1:NQM,0:1) ! IDX(num. of B.C., equation, axis or bndry)
+    integer(4) :: NQ, NC, NB
 
     ! NB = 0 at axis, = 1 at the boundary
     NB = NR / NRMAX
@@ -4295,58 +4280,35 @@ contains
        CLC(NR,:,LQ) = 0.d0
        PLC(NR,:,LQ) = 0.d0
 
-       ! The boundary condition matrices IDX and IMAX are created if ICALA=0
-       !   to store the information of the Dirichlet boundary conditions.
-       ! ** IDX stores both the equation and term numbers, NQ and NC, where the variable LQ appears.
-       ! ** IMAX stores the maximum number of IDX for each LQ.
-       if(ICALA == 0) then
-          I = 0
-          do NQ = 1, NQMAX
-             do NC = 1, NLCMAX(NQ)
-                if(NLCR(NC,NQ,NB) == LQ) THEN
-                   I = I + 1
-                   IDX(I,LQ,NB)%IDXNC = NC
-                   IDX(I,LQ,NB)%IDXNQ = NQ
-                end if
-             end do
-          end do
-          IMAX(LQ) = I
-       else
-       ! Read indices from the boundary condition matrices created at initial (ICALA=1)
-          if(present(VAL)) then
+       ! Eliminate X(NR,LQ) from the other rows: every term (NC,NQ) whose variable in the
+       !   row NR is LQ loses its coefficients on X(NR,LQ) (BLC in the row NR, CLC in the
+       !   row 1 on the axis, ALC in the row NRMAX-1 at the wall), and with a value VAL
+       !   the known products move to the constant term PLC.  The row LQ below then fixes
+       !   X(NR,LQ), so the solution is the same, only without the column.
+       ! The terms are found in the current NLCR on every call: their layout depends on
+       !   the input (FSTPTM, MDBEAM, MDFIXT), which may change between runs in one
+       !   process, and the rows already fixed in this call (NLCR(1,LQ',NB) = LQ') are
+       !   left alone.
+       do NQ = 1, NQMAX
+          do NC = 1, NLCMAX(NQ)
+             if(NLCR(NC,NQ,NB) /= LQ) cycle
              if(NR == 0) then ! axis
-                do I = 1, IMAX(LQ)
-                   NC = IDX(I,LQ,NB)%IDXNC
-                   NQ = IDX(I,LQ,NB)%IDXNQ
-                   PLC(NR  ,NC,NQ) = PLC(NR,NC,NQ)   + BLC(NR,NC,NQ)   * VAL
+                if(present(VAL)) then
+                   PLC(NR  ,NC,NQ) = PLC(NR  ,NC,NQ) + BLC(NR  ,NC,NQ) * VAL
                    PLC(NR+1,NC,NQ) = PLC(NR+1,NC,NQ) + CLC(NR+1,NC,NQ) * VAL
-                end do
-             else ! wall
-                do I = 1, IMAX(LQ)
-                   NC = IDX(I,LQ,NB)%IDXNC
-                   NQ = IDX(I,LQ,NB)%IDXNQ
-                   PLC(NR  ,NC,NQ) = PLC(NR,NC,NQ)   + BLC(NR,NC,NQ)   * VAL
-                   PLC(NR-1,NC,NQ) = PLC(NR-1,NC,NQ) + ALC(NR-1,NC,NQ) * VAL
-                end do
-             end if
-          end if
-
-          if(NR == 0) then ! axis
-             do I = 1, IMAX(LQ)
-                NC = IDX(I,LQ,NB)%IDXNC
-                NQ = IDX(I,LQ,NB)%IDXNQ
+                end if
                 BLC(NR  ,NC,NQ) = 0.d0
                 CLC(NR+1,NC,NQ) = 0.d0
-             end do
-          else ! wall
-             do I = 1, IMAX(LQ)
-                NC = IDX(I,LQ,NB)%IDXNC
-                NQ = IDX(I,LQ,NB)%IDXNQ
+             else ! wall
+                if(present(VAL)) then
+                   PLC(NR  ,NC,NQ) = PLC(NR  ,NC,NQ) + BLC(NR  ,NC,NQ) * VAL
+                   PLC(NR-1,NC,NQ) = PLC(NR-1,NC,NQ) + ALC(NR-1,NC,NQ) * VAL
+                end if
                 BLC(NR  ,NC,NQ) = 0.d0
                 ALC(NR-1,NC,NQ) = 0.d0
-             end do
-          end if
-       end if
+             end if
+          end do
+       end do
 
        ! Diagonal term on handled variable
        BLC (NR,1,LQ) = 1.d0
