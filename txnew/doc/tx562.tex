@@ -3949,13 +3949,34 @@ either case.
   versions load as before.  The time-trace history in the file is used only for $\tau_{E}$; at the
   first point after \texttt{LOAD} the quantities formed by a difference in time ($\tau_{E}$ and the
   magnetic Poynting fluxes \texttt{PoyntI(3:4)}) still depend on what was in memory.
-\item Edge transport barrier on a new run.  With \texttt{MDLETB} $\neq 0$ the transport outside
-  \texttt{RhoETB} is multiplied by a factor that falls from 1 to 0.1 over the \texttt{NTMAX} steps of a
-  run and is then held.  A new run in the same process started with the factor of the previous one,
-  without the ramp; \texttt{R} now starts it from 1.  \texttt{CONT} keeps the factor.  The factor is
-  not in the save file: \texttt{LOAD} computes it from the step count and \texttt{NTMAX} in the file
-  unless it is already held in memory, which gives the held value for a file written at the end of a
-  run, but the ramp of a run that stopped before its end is not restored.
+\item Edge transport barrier on a new run, through \texttt{CONT} and \texttt{LOAD}.  With
+  \texttt{MDLETB} $\neq 0$ the transport outside \texttt{RhoETB} is multiplied by a factor that falls as
+  $1 - 0.9\,\texttt{NT}/\texttt{NTMAX}$ over the steps of a run and is held at 0.1 from its last step
+  on.  A new run in the same process started with the factor of the previous one, without the ramp;
+  \texttt{R} now starts it from 1.  The hold was decided by comparing the factor with 0.1, which it
+  equals only to the last bit, depending on the compiler (unoptimized code left it just above 0.1 for
+  about one \texttt{NTMAX} in ten, and the next \texttt{CONT} started the ramp again); it is now decided
+  on the step count ($\texttt{NT} = \texttt{NTMAX}$ sets the factor to 0.1 exactly).  \texttt{CONT}
+  keeps a held factor, and after a run that stopped before its last step ramps again from the current
+  step, as before.  The factor and whether it is held are saved (extension record 6) and restored by
+  \texttt{LOAD}.  For a file of an earlier version they are formed from \texttt{NT} and
+  \texttt{NTMAX} in the file: exact for a file written at the end of a run, unheld for a run that
+  stopped early after an earlier run had held the factor.  An older binary reads a new file without
+  the record.  With \texttt{MDLETB} = 1 the held value changes by $3\times10^{-17}$ and the results
+  by round-off.
+\item Balance terms of the graphs (\texttt{GQY}).  The terms beyond \texttt{NLCMAX} of an equation were
+  never set and were written to the save file with what the allocation or an earlier run had left;
+  they are now zero.  The stored terms and the solution are unchanged.
+\item Boundary conditions in the theta scheme.  With \texttt{IGBDF} = 0 and \texttt{ADV} $\neq 1$ the
+  rows replaced by a condition (the Dirichlet rows, and $n(\texttt{NRMAX}) = n(\texttt{NRMAX}-1)$ with
+  \texttt{MDLWBC} = 1) were weighted like the equations: a Dirichlet row gave
+  $X = (\mathrm{VAL} - (1-\texttt{ADV})X^n)/\texttt{ADV}$, and a value off the condition decayed only by
+  the factor $-(1-\texttt{ADV})/\texttt{ADV}$ per step (\texttt{ADV} = 0.7: the axis value of
+  $\langle B u_{\r{i}\parallel}\rangle$ with \texttt{FSPARV(2)} = 0 43\% off after one step, the
+  wall gradient of the initial density alternating, 5\%, $-2$\%, $+0.8$\% of $n$).  These rows now
+  hold at the new time level, and the value moved into the other rows by the elimination is that of
+  the theta scheme.  BDF (the default) and \texttt{ADV} = 1 are unchanged bit for bit.  ($\psi$,
+  \texttt{LQm4}, has no boundary condition.)
 \end{itemize}
 
 \begin{thebibliography}{9}
