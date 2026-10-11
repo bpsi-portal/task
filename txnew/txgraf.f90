@@ -70,6 +70,9 @@ contains
     if(ier /= 0) then
        write(6,*) "XX Allocation error in allocate_txgraf"
        call deallocate_txgraf
+    else
+       ! The terms beyond NLCMAX(NQ) are never stored but are written to the save file.
+       GQY(:,:,:) = 0.0
     end if
 
   end subroutine allocate_txgraf
@@ -1582,10 +1585,12 @@ contains
 
   subroutine TXSTGQ
 
-    use tx_commons, only : NRMAX, NQMAX, NLCMAX, NLC, NLCR, ALC, BLC, CLC, PLC, X!, t_tx,lqi3,lqi4,lqi2
+    use tx_commons, only : NRMAX, NQMAX, NCM, NLCMAX, NLC, NLCR, ALC, BLC, CLC, PLC, X!, t_tx,lqi3,lqi4,lqi2
     integer(4) :: NR, NC, NQ, NC1
 
     do NQ = 1, NQMAX
+       ! No term there in this run (the arrays may come from a run or a file with more)
+       GQY(0:NRMAX,NLCMAX(NQ)+1:NCM,NQ) = 0.0
        do NC = 1, NLCMAX(NQ)
           NR = 0
           NC1 = NLCR(NC,NQ,0)
