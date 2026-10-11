@@ -468,6 +468,11 @@ subroutine TXLOAD(IST)
 
   read(io) NGT
   read(io) (GTX(I), I=0, NGT)
+  ! The GV history is not restored (NGVV = -1 below) and its length is not in the
+  ! file, so its two records are skipped.  Read with the NGVV of a run still in
+  ! memory, they would ask for more data than the file has after that run went
+  ! beyond the saved time.
+  NGVV = -1
   read(io) (GVX(I), I=0, NGVV)
   read(io) ((GTY(I,IGYT), I=0, NGT), IGYT =1, NGYTM)
   read(io) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
