@@ -358,7 +358,7 @@ contains
     real(8), dimension(1:NHFMmx) :: EpsLM 
 !    real(8) :: rLmeanL, QL, rNuAsE_inv 
     real(8) :: PTiVav, N02INT, RatSCX, sum1, sum2, zvpch
-    real(8) :: Frdc, Dcoef
+    real(8) :: Dcoef
     real(8) :: omegaer, omegaere, omegaeri
     real(8) :: zrNuee, zxi, znusteinv, zLamEZ, zCRZ, zsigma0, zsigmaneo
     real(8) :: rhoni, dvexbdr ! CDBM
@@ -1440,10 +1440,17 @@ contains
     !     *** ETB model ***
 
     if(MDLETB /= 0) then ! ETB on
-       Frdc = 0.1d0
-       if(FcoefETB > Frdc) then
-          Dcoef = (1.d0 - Frdc) / NTMAX
-          FcoefETB = 1.d0 - NT * Dcoef
+       ! The hold is decided on the step count, not by comparing the factor with 0.1:
+       ! 1 - NTMAX (0.9 / NTMAX) is 0.1 only to the last bit, which depends on the
+       ! compiler, and a factor left just above 0.1 started the ramp again in CONT.
+       if(.not. ETBheld .and. NTMAX > 0) then
+          if(NT >= NTMAX) then
+             FcoefETB = FrdcETB
+             ETBheld = .true.
+          else
+             Dcoef = (1.d0 - FrdcETB) / NTMAX
+             FcoefETB = 1.d0 - NT * Dcoef
+          end if
        end if
        do NR = 0, NRA
           if(RhoETB(1) /= 0.d0) then

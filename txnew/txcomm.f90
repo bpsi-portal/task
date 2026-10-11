@@ -265,8 +265,11 @@ module tx_commons
   integer(4) :: NT, NTCUM, NTMAX
   real(8) :: T_TX = 0.D0, TMAX
   ! Factor on the transport outside RhoETB (MDLETB /= 0, TXCALV): 1 at the start of a
-  !   RUN, 1 - 0.9 NT / NTMAX in it, held from the step where it reaches 0.1 on
+  !   RUN, 1 - (1 - FrdcETB) NT / NTMAX in it, and FrdcETB from the last step of the run
+  !   (NT = NTMAX) on, which sets ETBheld; CONT keeps a held factor
+  real(8), parameter :: FrdcETB = 0.1d0
   real(8) :: FcoefETB = 1.d0
+  logical :: ETBheld = .false.
 
   ! Configuration parameters
   integer(4) :: NQMAX, IERR, ICONT, IRPIN, irestart
