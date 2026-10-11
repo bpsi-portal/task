@@ -3925,6 +3925,37 @@ either case.
   0.1 is a test value that stabilized this case and has no physical justification, and fixed
   transport alongside CDBM is not a recommended standard setting.  \texttt{FSVAHL} = $-0.5$ instead
   of $-0.25$ also removes the depletion; the default is kept.
+\item Dirichlet conditions in the matrix.  \texttt{BOUNDARY} removes a variable fixed by a Dirichlet
+  condition from the other rows: its coefficients there are set to zero, and a nonzero boundary
+  value moves with them to the constant term.  The list of the terms concerned was kept from the
+  first call of the process, and that first call skipped the elimination.  The equations are the
+  same either way, but the first sweep of the first run of a process differed from every later run
+  in round-off, which Anderson acceleration carried to $10^{-7}$ (and $10^{-4}$ in $n_{\r{z}0}$ with
+  \texttt{MDOSQZ} = \texttt{MDOSQZN} = 1): a run repeated in the same process (\texttt{R} answered
+  with ``y''), or after a change of \texttt{NRMAX}, did not reproduce the first.  The list was also
+  never rebuilt, while the variable of a term depends on the input: after a change of
+  \texttt{FSTPTM}, \texttt{MDBEAM} or \texttt{MDFIXT} between runs in one process the stale list
+  removed coefficients of other variables (an $O(1)$ error after \texttt{FSTPTM} 4 $\to$ 0).  The
+  terms are now found on every call.  A repeated run, a run after a change of input, and a fresh
+  process with that input agree bit for bit; the first run of a fresh process changes by round-off
+  (it is the second run of the former code): at 1\,s, with and without NBI, with CDBM and with fixed
+  transport, the densities and temperatures change by less than $4\times10^{-7}$ and \texttt{LQm2}
+  by $6\times10^{-5}$, and the number of sweeps by 0.1\%.  A run started by \texttt{LOAD} is unchanged.
+\item \texttt{LOAD} after a longer run.  The save file holds the history of the global quantities
+  (\texttt{GVX}, \texttt{GVY}) without its length, and \texttt{LOAD} read it with the length in
+  memory: after \texttt{R}, \texttt{S}, \texttt{C}, \texttt{L} it stopped with an input error.
+  \texttt{LOAD} does not keep that history (it starts the time-evolution graphs again at the loaded
+  time), so the records are now skipped; the file format is unchanged, and files of all earlier
+  versions load as before.  The time-trace history in the file is used only for $\tau_{E}$; at the
+  first point after \texttt{LOAD} the quantities formed by a difference in time ($\tau_{E}$ and the
+  magnetic Poynting fluxes \texttt{PoyntI(3:4)}) still depend on what was in memory.
+\item Edge transport barrier on a new run.  With \texttt{MDLETB} $\neq 0$ the transport outside
+  \texttt{RhoETB} is multiplied by a factor that falls from 1 to 0.1 over the \texttt{NTMAX} steps of a
+  run and is then held.  A new run in the same process started with the factor of the previous one,
+  without the ramp; \texttt{R} now starts it from 1.  \texttt{CONT} keeps the factor.  The factor is
+  not in the save file: \texttt{LOAD} computes it from the step count and \texttt{NTMAX} in the file
+  unless it is already held in memory, which gives the held value for a file written at the end of a
+  run, but the ramp of a run that stopped before its end is not restored.
 \end{itemize}
 
 \begin{thebibliography}{9}
