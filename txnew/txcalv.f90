@@ -357,7 +357,6 @@ contains
 !!$    real(8) ::Cs, Lc, PTiVA, Chicl, 
     real(8), dimension(1:NHFMmx) :: EpsLM 
 !    real(8) :: rLmeanL, QL, rNuAsE_inv 
-    real(8), save :: Fcoef = 1.d0
     real(8) :: PTiVav, N02INT, RatSCX, sum1, sum2, zvpch
     real(8) :: Frdc, Dcoef
     real(8) :: omegaer, omegaere, omegaeri
@@ -1442,24 +1441,24 @@ contains
 
     if(MDLETB /= 0) then ! ETB on
        Frdc = 0.1d0
-       if(Fcoef > Frdc) then
+       if(FcoefETB > Frdc) then
           Dcoef = (1.d0 - Frdc) / NTMAX
-          Fcoef = 1.d0 - NT * Dcoef
+          FcoefETB = 1.d0 - NT * Dcoef
        end if
        do NR = 0, NRA
           if(RhoETB(1) /= 0.d0) then
              if(Rho(NR) > RhoETB(1)) then
-                Dfs(NR,:) = Dfs(NR,:) * Fcoef
+                Dfs(NR,:) = Dfs(NR,:) * FcoefETB
              end if
           end if
           if(RhoETB(2) /= 0.d0) then
              if(Rho(NR) > RhoETB(2)) then
-                rMus(NR,:) = rMus(NR,:) * Fcoef
+                rMus(NR,:) = rMus(NR,:) * FcoefETB
              end if
           end if
           if(RhoETB(3) /= 0.d0) then
              if(Rho(NR) > RhoETB(3)) then
-                Chis(NR,:) = Chis(NR,:) * Fcoef
+                Chis(NR,:) = Chis(NR,:) * FcoefETB
              end if
           end if
        end do

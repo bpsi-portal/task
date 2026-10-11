@@ -264,6 +264,9 @@ module tx_commons
   ! Time control parameters
   integer(4) :: NT, NTCUM, NTMAX
   real(8) :: T_TX = 0.D0, TMAX
+  ! Factor on the transport outside RhoETB (MDLETB /= 0, TXCALV): 1 at the start of a
+  !   RUN, 1 - 0.9 NT / NTMAX in it, held from the step where it reaches 0.1 on
+  real(8) :: FcoefETB = 1.d0
 
   ! Configuration parameters
   integer(4) :: NQMAX, IERR, ICONT, IRPIN, irestart
