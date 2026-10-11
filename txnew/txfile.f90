@@ -228,7 +228,8 @@ subroutine TXSAVE
        & MODEAV,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab, &
        & IGBDF,ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor, &
        & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,thrp,kappa,CPsi,VPoynt,PoyntI,imodel_neo,MDLNSUP, &
-       & RWALL,RWALLZ,RWALLIZ,FSTPTM,PROFD2C,PROFD2W,NSM,MDLSOLT,DSOLT,CHISOLT,RMUSOLT,WSOLT
+       & RWALL,RWALLZ,RWALLIZ,FSTPTM,PROFD2C,PROFD2W,NSM,MDLSOLT,DSOLT,CHISOLT,RMUSOLT,WSOLT, &
+       & FcoefETB,ETBheld
   use tx_graphic, only : NGYTM,NGYVM,MODEG,MODEGL,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP,GTY,GVY,GQY,GTX,GVX
   use tx_interface, only : TOUPPER
 
@@ -328,7 +329,8 @@ subroutine TXSAVE
   ! Extension records for inputs added after the layout above was fixed, one record
   ! per version (1: MDLNSUP, 2: main-wall recycling, 3: FSTPTM, 4: centre and width of
   ! the PROFD2 modification, which were constants before, 5: the SOL transport
-  ! connection MDLSOLT and its inputs).  An older TXLOAD stops
+  ! connection MDLSOLT and its inputs, 6: the ETB factor and whether it is held,
+  ! state of the run that the step count does not always give).  An older TXLOAD stops
   ! before the records it does not know; TXLOAD reads each one only when it is present.
   ! FSTPTM was missing from the layout although FSVAHL and the other FS* inputs are in it.
   write(io) 1, MDLNSUP
@@ -336,6 +338,7 @@ subroutine TXSAVE
   write(io) 3, FSTPTM(1:NSM)
   write(io) 4, PROFD2C, PROFD2W
   write(io) 5, MDLSOLT, DSOLT, CHISOLT(1:NSM), RMUSOLT(1:NSM), WSOLT
+  write(io) 6, FcoefETB, merge(1, 0, ETBheld)
   close(io)
   write(6,*) '# DATA WAS SUCCESSFULLY SAVED IN THE FILE.'
 
@@ -368,7 +371,7 @@ subroutine TXLOAD(IST)
        & ErV,PTsV_FIX,PNsV_FIX,ErV_FIX, &
        & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM,bdf_history_ready,stdin_ended, &
        & MDLNSUP, PNsSUPlast, RWALL, RWALLZ, RWALLIZ, FSTPTM, PROFD2C, PROFD2W, &
-       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT
+       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT, FcoefETB, FrdcETB, ETBheld
   use tx_init, only : TXCALM
   use tx_graphic, only : allocate_txgraf,deallocate_txgraf, &
        &                 MODEG,MODEGL,NGYTM,NGYVM,NGR,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP, &
@@ -391,7 +394,9 @@ subroutine TXLOAD(IST)
   integer(4) :: mdlsolt_load
   real(8) :: dsolt_load, wsolt_load
   real(8), dimension(NSM) :: chisolt_load, rmusolt_load
-  logical :: LEX
+  integer(4) :: ietbheld_load
+  real(8) :: fcoefetb_load
+  logical :: LEX, etb_loaded
 
   do 
      write(6,*) '# INPUT : LOAD FILE NAME'
@@ -484,6 +489,7 @@ subroutine TXLOAD(IST)
   read(io) (thrp(I), I=1, 2*NRMAX)
   ! Extension record (version 1), absent in files written before it was introduced:
   ! then MDLNSUP keeps its current value.
+  etb_loaded = .false.
   read(io,iostat=istx) iextver, mdlnsup_load
   if( istx == 0 .and. iextver >= 1 ) then
      MDLNSUP = mdlnsup_load
@@ -501,6 +507,11 @@ subroutine TXLOAD(IST)
               if( istx == 0 .and. iextver >= 5 ) then
                  MDLSOLT = mdlsolt_load ; DSOLT = dsolt_load ; WSOLT = wsolt_load
                  CHISOLT(1:NSM) = chisolt_load(1:NSM) ; RMUSOLT(1:NSM) = rmusolt_load(1:NSM)
+                 read(io,iostat=istx) iextver, fcoefetb_load, ietbheld_load
+                 if( istx == 0 .and. iextver >= 6 ) then
+                    FcoefETB = fcoefetb_load ; ETBheld = ietbheld_load /= 0
+                    etb_loaded = .true.
+                 end if
               else
                  write(6,'(A,I2)') ' ## No record of the SOL transport connection in the file: MDLSOLT kept at', &
                       & MDLSOLT
@@ -517,6 +528,22 @@ subroutine TXLOAD(IST)
      end if
   else
      write(6,'(A,I2)') ' ## No extension record in the file (older format): MDLNSUP kept at', MDLNSUP
+  end if
+  if( .not. etb_loaded ) then
+     ! A file before version 6: the ETB factor from the step count of the run that
+     ! wrote it, as TXCALV forms it (held if that run reached its last step).  A
+     ! factor held by an earlier run of a run that then stopped early (NT < NTMAX)
+     ! cannot be told from the file and comes out unheld.
+     ETBheld = NTMAX > 0 .and. NT >= NTMAX
+     if( ETBheld ) then
+        FcoefETB = FrdcETB
+     else if( NTMAX > 0 ) then
+        FcoefETB = 1.d0 - NT * ((1.d0 - FrdcETB) / NTMAX)
+     else
+        FcoefETB = 1.d0
+     end if
+     if( MDLETB /= 0 ) write(6,'(A,L2,F9.5)') &
+          & ' ## No record of the ETB factor in the file: from NT and NTMAX, held, factor =', ETBheld, FcoefETB
   end if
   close(io)
   ! The loaded PNsSUP are the values last set, so TXPARM_CHECK does not take PNsSUP(2:3)
