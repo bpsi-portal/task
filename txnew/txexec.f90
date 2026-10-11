@@ -900,10 +900,10 @@ contains
   subroutine TXCALB(BA,BL,BX)
 
     use tx_commons, only : IGBDF, ADV, MDLPCK, NQMAX, NRMAX, NLC, NLCR, CLC, BLC, ALC, NLCMAX, &
-         &              PLC, X, XOLD, bdf_history_ready, bdf_history_dt, DT!, lqb1, pnbv
+         &              PLC, X, XOLD, bdf_history_ready, bdf_history_dt, DT, LBCROW!, lqb1, pnbv
     real(8), dimension(:,:), intent(inout) :: BA, BL
     real(8), dimension(:), intent(inout) :: BX
-    INTEGER(4) :: J, NR, NQ, NC, NC1, IA, IB, IC, NCHvs, NC1Hvs, NC1Hvs2, NC2
+    INTEGER(4) :: J, NR, NQ, NC, NC1, IA, IB, IC, NCHvs, NC1Hvs, NC1Hvs2, NC2, NB
     INTEGER(4) :: JA, JB, JC, KL
     real(8) :: COEF1, COEF2, COEF3, COEF!, suml1,suml2
     
@@ -1291,6 +1291,18 @@ contains
                   &              +(  CLC(NR,NC,NQ) * X(NR-1,NC2) &
                   &                + BLC(NR,NC,NQ) * X(NR  ,NC2)) * (1.d0 - ADV) * NC1Hvs
           end do
+    end do
+
+    ! A row replaced by a boundary condition (LBCROW) is a constraint at the new time
+    ! level: its matrix row is -ADV times the condition, so the right-hand side is ADV
+    ! times its constant term (PLC = -VAL), without the explicit part (1 - ADV) L X
+    ! added above, which made a Dirichlet row give (VAL - (1 - ADV) X^n) / ADV.  With
+    ! ADV = 1 this is the value assembled above; BDF needs nothing (ADV = COEF3).
+    do NB = 0, 1
+       NR = NB * NRMAX
+       do NQ = 1, NQMAX
+          if(LBCROW(NB,NQ)) BX(NQMAX * NR + NQ) = ADV * sum(PLC(NR,1:NLCMAX(NQ),NQ))
+       end do
     end do
     end if
 

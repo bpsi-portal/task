@@ -221,6 +221,7 @@ contains
 
     !     Dirichlet condition
 
+    LBCROW(:,:) = .false.
     call BOUNDARY(0    ,LQe2,0)
     call BOUNDARY(0    ,LQi2,0)
     call BOUNDARY(0    ,LQz2,0)
@@ -4268,6 +4269,8 @@ contains
     integer(4), intent(in) :: NR, LQ, ID
     real(8), intent(in), optional :: VAL
     integer(4) :: NQ, NC, NB
+    real(8) :: val0, valc
+    logical :: lmove
 
     ! NB = 0 at axis, = 1 at the boundary
     NB = NR / NRMAX
@@ -4289,20 +4292,30 @@ contains
        !   the input (FSTPTM, MDBEAM, MDFIXT), which may change between runs in one
        !   process, and the rows already fixed in this call (NLCR(1,LQ',NB) = LQ') are
        !   left alone.
+       ! The value moved is that of the new time level, VAL, except in the theta scheme
+       !   (IGBDF = 0): there a coefficient c on X(NR,LQ) stands for
+       !   ADV c X^(n+1) + (1 - ADV) c X^n with X^(n+1) = VAL, and PLC is not weighted
+       !   (COEF3 = 1), so it takes VAL + (1 - ADV) (X^n - VAL); X is X^n during the
+       !   sweeps.  With ADV = 1 this is VAL, and nothing for a zero value.
+       val0 = 0.d0
+       if(present(VAL)) val0 = VAL
+       valc = val0
+       if(IGBDF == 0) valc = val0 + (1.d0 - ADV) * (X(NR,LQ) - val0)
+       lmove = present(VAL) .or. IGBDF == 0
        do NQ = 1, NQMAX
           do NC = 1, NLCMAX(NQ)
              if(NLCR(NC,NQ,NB) /= LQ) cycle
              if(NR == 0) then ! axis
-                if(present(VAL)) then
-                   PLC(NR  ,NC,NQ) = PLC(NR  ,NC,NQ) + BLC(NR  ,NC,NQ) * VAL
-                   PLC(NR+1,NC,NQ) = PLC(NR+1,NC,NQ) + CLC(NR+1,NC,NQ) * VAL
+                if(lmove) then
+                   PLC(NR  ,NC,NQ) = PLC(NR  ,NC,NQ) + BLC(NR  ,NC,NQ) * valc
+                   PLC(NR+1,NC,NQ) = PLC(NR+1,NC,NQ) + CLC(NR+1,NC,NQ) * valc
                 end if
                 BLC(NR  ,NC,NQ) = 0.d0
                 CLC(NR+1,NC,NQ) = 0.d0
              else ! wall
-                if(present(VAL)) then
-                   PLC(NR  ,NC,NQ) = PLC(NR  ,NC,NQ) + BLC(NR  ,NC,NQ) * VAL
-                   PLC(NR-1,NC,NQ) = PLC(NR-1,NC,NQ) + ALC(NR-1,NC,NQ) * VAL
+                if(lmove) then
+                   PLC(NR  ,NC,NQ) = PLC(NR  ,NC,NQ) + BLC(NR  ,NC,NQ) * valc
+                   PLC(NR-1,NC,NQ) = PLC(NR-1,NC,NQ) + ALC(NR-1,NC,NQ) * valc
                 end if
                 BLC(NR  ,NC,NQ) = 0.d0
                 ALC(NR-1,NC,NQ) = 0.d0
@@ -4313,6 +4326,7 @@ contains
        ! Diagonal term on handled variable
        BLC (NR,1,LQ) = 1.d0
        NLCR(1,LQ,NB) = LQ
+       LBCROW(NB,LQ) = .true.
 
        if(present(VAL)) PLC(NR,1,LQ) = PLC(NR,1,LQ) - VAL
     else
@@ -4369,6 +4383,7 @@ contains
     NLCR(1,LQ,1) = LQ
     BLC(NRMAX,1,LQ) =   1.d0
     CLC(NRMAX,1,LQ) = - 1.d0
+    LBCROW(1,LQ) = .true.
 
   end subroutine BOUNDARY_ZEROGRAD
 

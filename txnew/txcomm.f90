@@ -270,6 +270,10 @@ module tx_commons
   real(8), parameter :: FrdcETB = 0.1d0
   real(8) :: FcoefETB = 1.d0
   logical :: ETBheld = .false.
+  ! Rows replaced by a condition in TXCALA, on the axis (0) and at the wall (1):
+  !   BOUNDARY (Dirichlet) and BOUNDARY_ZEROGRAD (n(NRMAX) = n(NRMAX-1)).  TXCALB
+  !   imposes them at the new time level in every time scheme.
+  logical, dimension(0:1,1:NQM) :: LBCROW = .false.
 
   ! Configuration parameters
   integer(4) :: NQMAX, IERR, ICONT, IRPIN, irestart
