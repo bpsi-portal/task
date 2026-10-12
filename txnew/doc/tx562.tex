@@ -3946,9 +3946,7 @@ either case.
   memory: after \texttt{R}, \texttt{S}, \texttt{C}, \texttt{L} it stopped with an input error.
   \texttt{LOAD} does not keep that history (it starts the time-evolution graphs again at the loaded
   time), so the records are now skipped; the file format is unchanged, and files of all earlier
-  versions load as before.  The time-trace history in the file is used only for $\tau_{E}$; at the
-  first point after \texttt{LOAD} the quantities formed by a difference in time ($\tau_{E}$ and the
-  magnetic Poynting fluxes \texttt{PoyntI(3:4)}) still depend on what was in memory.
+  versions load as before.  (For the first point of the graphs after \texttt{LOAD}, see below.)
 \item Edge transport barrier on a new run, through \texttt{CONT} and \texttt{LOAD}.  With
   \texttt{MDLETB} $\neq 0$ the transport outside \texttt{RhoETB} is multiplied by a factor that falls as
   $1 - 0.9\,\texttt{NT}/\texttt{NTMAX}$ over the steps of a run and is held at 0.1 from its last step
@@ -3977,6 +3975,31 @@ either case.
   hold at the new time level, and the value moved into the other rows by the elimination is that of
   the theta scheme.  BDF (the default) and \texttt{ADV} = 1 are unchanged bit for bit.  ($\psi$,
   \texttt{LQm4}, has no boundary condition.)
+\item A failed step.  A step fails on a negative density or temperature in a sweep, on a singular
+  matrix, or, with \texttt{EPS} $< 0$, on no convergence.  After a negative density or temperature the
+  run used to stop with \texttt{X} set to the failed iterate, which \texttt{SAVE} then wrote, and
+  without freeing the work arrays of the time loop, so that the next \texttt{CONT} in the process
+  stopped with an allocation error.  The other failures kept \texttt{X} but left the time, the plasma
+  current and the step counts one step ahead.  The run now stops on the last accepted step: \texttt{X},
+  the time, the current, \texttt{NT}, \texttt{NTCUM}, the BDF history and the ETB factor are those of
+  that step (within a retried step, of its start), the failed iterate is not stored in \texttt{X} or
+  in the graphs, and the arrays are freed.  The error is cleared, as before, by a parameter input,
+  after which \texttt{CONT} continues from that step; \texttt{SAVE}, \texttt{LOAD} and \texttt{R}
+  work as after a complete run, and the next run ramps the current from its value at that step.  A
+  failure at step $k$ leaves the state of a run of $k-1$ steps bit for bit, and \texttt{CONT} or
+  \texttt{LOAD} from it continues bit for bit as from that run.
+\item The first point of the graphs.  Some global quantities are differences over the last step:
+  $dW/dt$ in $\tau_{E2}$, the Poynting fluxes \texttt{PoyntI}, the inductive voltage
+  \texttt{VPoynt(1)}, and the flux integrals \texttt{CPsi}.  At the first point of a run only
+  \texttt{PoyntI} and \texttt{CPsi} were reset, so \texttt{VPoynt} kept the values of the previous run
+  in the process; after \texttt{LOAD} only \texttt{CPsi} was reset, so \texttt{PoyntI(3:4)} and
+  \texttt{VPoynt} came from the previous run or the file, and $dW/dt$ was taken against the stored
+  energy of the previous run (or zero in a new process).  Both points now follow one rule: with no
+  previous step these quantities are zero ($\tau_{E2} = \tau_{E1}$), and the instantaneous
+  \texttt{VPoynt(0)}, \texttt{(2)}, \texttt{(3)} are evaluated as at any step.  The solution and all
+  later points are unchanged.
+\item Step count.  \texttt{NTCUM}, the number of steps of a run through \texttt{CONT},
+  \texttt{SAVE} and \texttt{LOAD} (a record only), now starts again from 0 with \texttt{R}.
 \end{itemize}
 
 \begin{thebibliography}{9}
