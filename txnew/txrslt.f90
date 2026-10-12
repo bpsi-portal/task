@@ -179,7 +179,9 @@ contains
     SINT = SIET+SNBT
     !    SOUT = SLST
 
-    if(abs(T_TX - TPRE) <= epsilon(1.d0)) then
+    ! The first point of a RUN (T_TX = TPRE = 0) or after a LOAD (irestart = 1) has no
+    ! previous step: dW/dt is zero there, so that TAUE2 = TAUE1.
+    if(irestart == 1 .or. abs(T_TX - TPRE) <= epsilon(1.d0)) then
        WPDOT = 0.d0
     else
        WPDOT = (WPT - WPPRE)/(T_TX - TPRE)
@@ -475,16 +477,24 @@ contains
               &   * (T_TX - T_TX_old)
 
          CPsi_old(:) = CPsi(:)
-      else if( irestart == 1 ) then
-         ! Right after restart
-         !     CPsi_old(:) = CPsi(:)
-         CPsi(:)     = 0.d0
-         CPsi_old(:) = 0.d0
       else
-         ! At initial
+         ! The first point of a RUN (T_TX = 0) or right after a LOAD (irestart = 1) has no
+         ! previous step.  The quantities that are differences over the step (PoyntI,
+         ! VPoynt(1)) or integrals in time (CPsi) are zero there; the instantaneous ones
+         ! (VPoynt(0), (2), (3)) are evaluated as at any step.  Before, these kept the
+         ! values of the previous run in the process (or of the file for PoyntI(1:2) and
+         ! VPoynt), and PoyntI(3:4) were not reset at a LOAD.
          PoyntI(:)   = 0.d0
          CPsi(:)     = 0.d0
          CPsi_old(:) = 0.d0
+         VPoynt(0) = VLOOP
+         VPoynt(1) = 0.d0
+         if( iPoyntpol == 1 .and. iPoynttor == 0 ) then
+            VPoynt(2) = WJengy / zIpol
+         else
+            VPoynt(2) = WJengy / zIp
+         end if
+         VPoynt(3) = VLOOPpol * (zIpol / zIp)
       end if
       T_TX_old     = T_TX
       zIp_old      = zIp

@@ -586,9 +586,9 @@ subroutine TXLOAD(IST)
   call TXCALC(0)
   call TXCALA
 
-  ! TAUE2 uses data one step before the data was stored.
-  ! Then TAUE2 is reconstituted by using the graphic data of TAUE2.
-  TAUE2 = real(GTY(NGT,34),8)
+  ! TAUE2, PoyntI and VPoynt of the LOAD point follow the first-point rule of TXGLOB
+  ! (irestart = 1): no previous step.  (TAUE2 was set here from GTY(NGT,34), which is
+  ! WST(2), and TXGLOB overwrote it.)
 
   ! Reset start point of graphics
   NGT=-1
