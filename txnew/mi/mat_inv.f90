@@ -1,5 +1,7 @@
 module matrix_inversion
   implicit none
+  ! beam_energy_ratio calls that found no solution (warned for the first few)
+  integer, save :: ber_nfail = 0
 
 contains
 
@@ -1914,11 +1916,27 @@ contains
 !   a non-positive derivative falls back to bisection.  The start is the large-x limit
 !   G -> pi/sqrt(3), x = F(x0) + pi/sqrt(3) + t ln[(1 + x^(3/2))/(1 + x0^(3/2))], iterated twice.
 !   T(x) > x0/1.5 for x > x0: for t <= x0/1.5 (T_b <= 2 T_i) there is no root and x0 is returned.
-    use tx_commons, only : cnpi => Pi
+!   Temperatures of an iterate that is not a state (negative, NaN, Inf) have no answer: a
+!   non-finite or negative x0 gives 0, a non-finite t gives x0, and a search that meets a
+!   non-finite g or finds no bracket in NDOUBLE doublings gives x0, with a warning, so that
+!   the result is never NaN and the search always ends.  (Such iterates are stopped by
+!   TXCHCK and by the test of the Anderson step; this guards the routine itself.)
+    use tx_commons, only : cnpi => Pi, nonfinite
     real(8), intent(in) :: x0, t
     real(8) :: a, b, x, xn, g, dg, dxn, f0, l0, u
     integer :: k
+    integer, parameter :: NDOUBLE = 60
 
+    if( nonfinite(x0) .or. x0 < 0.d0 ) then
+       xb = 0.d0
+       call ber_fail
+       return
+    end if
+    if( nonfinite(t) ) then
+       xb = x0
+       call ber_fail
+       return
+    end if
     if( t <= x0 / 1.5d0 ) then
        xb = x0
        return
@@ -1932,14 +1950,28 @@ contains
        x = max(x, f0 + cnpi / sqrt(3.d0) + t * log((1.d0 + x * sqrt(x)) / l0))
     end do
     b = max(x, a + 1.d0)
-    do while( g_of(b) < 0.d0 )
+    g = g_of(b)
+    k = 0
+    do while( g < 0.d0 .and. .not. nonfinite(g) .and. k < NDOUBLE )
        a = b
        b = 2.d0 * b
+       g = g_of(b)
+       k = k + 1
     end do
+    if( nonfinite(g) .or. g < 0.d0 ) then
+       xb = x0
+       call ber_fail
+       return
+    end if
     ! safeguarded Newton from the right
     x = b
     do k = 1, 100
        g = g_of(x)
+       if( nonfinite(g) ) then
+          xb = x0
+          call ber_fail
+          return
+       end if
        if( g == 0.d0 ) exit
        if( g > 0.d0 ) then
           b = x
@@ -1968,6 +2000,13 @@ contains
       real(8), intent(in) :: y
       g_of = beam_sd_integral(y) - f0 - t * log((1.d0 + y * sqrt(y)) / l0)
     end function g_of
+
+    subroutine ber_fail
+      ber_nfail = ber_nfail + 1
+      if( ber_nfail <= 5 ) write(6,'(A,2ES12.4,A,ES12.4,A)') &
+           & ' ## WARNING(beam_energy_ratio): no solution for x0, t =', x0, t, '; returned', xb, &
+           & trim(merge(' (no more warnings)', '                   ', ber_nfail == 5))
+    end subroutine ber_fail
 
   end function beam_energy_ratio
 
