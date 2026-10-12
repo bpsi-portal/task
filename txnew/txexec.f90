@@ -802,15 +802,16 @@ contains
 
        cycle L_NTDO
 
-       ! The step failed: a singular matrix, a negative density or temperature (TXCHCK),
-       ! or no convergence with EPS < 0.  Its iterate is not a result and is not stored,
-       ! in X or in the graphs.  The run stops on the last accepted step, with the time,
-       ! the plasma current, the step counts, the BDF history and the ETB factor of that
-       ! step, so that SAVE writes that state and a CONT (after the parameter change that
-       ! clears IERR) or a LOAD continues from it.  Within a retried step (nsub > 1) that
-       ! is the state at the start of the step, as when the retry began.  TXGLOB is not
-       ! called again: the global quantities of that step are already in place, and a
-       ! second call at the same time would take differences over a zero interval.
+       ! The step failed: a singular matrix, a non-finite value or a negative density or
+       ! temperature (TXCHCK), or no convergence with EPS < 0.  Its iterate is not a
+       ! result and is not stored, in X or in the graphs.  The run stops on the last
+       ! accepted step, with the time, the plasma current, the step counts, the BDF
+       ! history and the ETB factor of that step, so that SAVE writes that state and a
+       ! CONT (after the parameter change that clears IERR) or a LOAD continues from it.
+       ! Within a retried step (nsub > 1) that is the state at the start of the step, as
+       ! when the retry began.  TXGLOB is not called again: the global quantities of that
+       ! step are already in place, and a second call at the same time would take
+       ! differences over a zero interval.
 170    Tfail = T_TX
        if(nsub > 1) then
           DT = DTfull ; X = Xstart
@@ -1717,19 +1718,36 @@ contains
 
 !***************************************************************
 !
-!   Check negative density or temperature
+!   Check non-finite values, negative density or temperature
 !
 !***************************************************************
 
   subroutine TXCHCK(NTL,IC,XL,IER)
 
-    use tx_commons, only : NQMAX, NRMAX, LQe1, LQi1, LQz1, LQe5, LQi5, LQz5, LQb1, LQr1
+    use tx_commons, only : NQMAX, NRMAX, LQe1, LQi1, LQz1, LQe5, LQi5, LQz5, LQb1, LQr1, nonfinite
     integer(4), intent(in) :: NTL, IC
     integer(4), intent(inout) :: IER
     real(8), dimension(0:NRMAX,1:NQMAX), intent(in) :: XL
-    integer(4) :: NR
+    integer(4) :: NR, NQ, nbad
 
     IER = 0
+
+    ! A NaN or an Inf anywhere (a solve that broke down) is reported as such, before the
+    ! sign tests: those must see finite values only, since -Ofast may let a NaN compare
+    ! as negative.  The step fails like any other (IER = 3).
+    nbad = count(nonfinite(XL))
+    if(nbad > 0) then
+       do NQ = 1, NQMAX
+          do NR = 0, NRMAX
+             if(nonfinite(XL(NR,NQ))) then
+                write(6,'(A,I6,2(A,I4),2(A,I4),A)') '### ERROR(TXLOOP) : Non-finite values (NaN or Inf):', &
+                     & nbad, ', the first at NQ =', NQ, ', NR =', NR, ', NT=', NTL, ', IC=', IC, '.'
+                IER = 3
+                return
+             end if
+          end do
+       end do
+    end if
 
     do NR = 0, NRMAX
        if (XL(NR,LQe1) < 0.d0 .or. XL(NR,LQi1) < 0.d0 .or. XL(NR,LQz1) < 0.d0 .or.&
