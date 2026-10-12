@@ -491,6 +491,7 @@ contains
     integer(4) :: iflag, NS, NF
     integer(4), dimension(1:20) :: ierl
 
+    ier = 0   ! also when the arrays are already allocated and nothing is done
     ierl(:) = 0
     if(nrmax <= 1) then
       write(6,*) "XXX ALLOCATE_TXCOMM : ILLEGAL PARAMETER    NRMAX=", nrmax

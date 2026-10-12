@@ -387,7 +387,7 @@ subroutine TXLOAD(IST)
   integer(4) :: NQ, NR, NC, I, IGYT, IGYV, io
   character(len=100) ::  TXFNAM, RCSId
   character(len=8) :: LOADSLID
-  integer(4) :: istx, iextver, mdlnsup_load, ipot_cur
+  integer(4) :: istx, iextver, mdlnsup_load, ipot_cur, ierr_file, ier_alloc
   real(8), dimension(3) :: rwall_load
   real(8), dimension(NSM) :: fstptm_load
   real(8), dimension(2) :: profd2_load
@@ -456,14 +456,24 @@ subroutine TXLOAD(IST)
   if( imodel_neo(4) /= ipot_cur ) write(6,'(A,I2,A,I2,A)') &
        & ' ## Potato closure from the file: imodel_neo(4) =', imodel_neo(4), ' (was', ipot_cur, ')'
 
-  read(io) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
+  ! The error flag of the run that wrote the file: a file written after a failed step
+  ! holds the last accepted step, and a LOAD clears the flag (TXMENU), as it always
+  ! did in a new process.  It was read into IERR, which then also took the status of
+  ! the allocation; with the arrays already allocated that status was not set, so
+  ! such a file made a LOAD in the same process free every array and stop.
+  read(io) T_TX,TMAX,NT,NTCUM,NQMAX,ierr_file
+  if(ierr_file /= 0) write(6,'(A,I3,A)') ' ## The file was written after a failed step (IERR =', &
+       & ierr_file, '); it holds the last accepted step'
 
-  call allocate_txcomm(ierr)
-  call allocate_txgraf(ierr)
-  if(ierr /= 0) then
+  call allocate_txcomm(ier_alloc)
+  if(ier_alloc == 0) call allocate_txgraf(ier_alloc)
+  if(ier_alloc /= 0) then
      call deallocate_txcomm
      call deallocate_txgraf
      write(6,*) "XX Allocation error : TXLOAD"
+     close(io)
+     IST = 1
+     return
   end if
 
   read(io) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)

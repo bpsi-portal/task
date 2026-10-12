@@ -48,6 +48,7 @@ contains
     integer(4) :: N
     integer(4), dimension(1:3) :: ierl
 
+    ier = 0   ! also when the arrays are already allocated and nothing is done
     ierl(:) = 0
 
     ! allocation check
