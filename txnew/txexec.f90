@@ -10,7 +10,7 @@ module tx_main
   real(8), dimension(:),   allocatable :: and_x0, and_f0, and_x, and_g, and_b, and_s, and_work
   real(8), dimension(:),   allocatable :: and_sc
   integer(4), dimension(:), allocatable :: and_iwork
-  integer(4) :: and_k = 0, and_ncall = 0, and_nrst = 0, and_nfail = 0
+  integer(4) :: and_k = 0, and_ncall = 0, and_nrst = 0, and_nfail = 0, and_nrej = 0
   logical :: and_have0 = .false.
   real(8) :: and_condmax = 0.d0, and_cpu = 0.d0
   ! Quality report of the last DGBSVX band solve (MDLPCK = 3, and the MDLPCK = 2
@@ -221,7 +221,7 @@ contains
     ICSUM = 0
     ndamp = 0
     nretried = 0 ; nsub = 1 ; nsubmax = 1 ; nretryfail = 0
-    and_ncall = 0 ; and_nrst = 0 ; and_nfail = 0 ; and_condmax = 0.d0 ; and_cpu = 0.d0
+    and_ncall = 0 ; and_nrst = 0 ; and_nfail = 0 ; and_nrej = 0 ; and_condmax = 0.d0 ; and_cpu = 0.d0
 #ifdef TX_PROFILE
     call CPU_TIME(prof_total_t0)
     prof_ic_sum    = 0.d0
@@ -863,6 +863,8 @@ contains
        if(nretryfail > 0) write(6,'(A)') &
             & ' ## WARNING: steps did not converge even at DT/2**NRETRY; increase NRETRY or decrease DT'
     end if
+    if(and_nrej > 0) write(6,'(A,I7,A)') ' ## Anderson: ', and_nrej, &
+         & ' extrapolations rejected (negative density or pressure, or NaN/Inf); the Picard iterate taken'
 
 #ifdef TX_PROFILE
     call CPU_TIME(prof_t0)
@@ -882,9 +884,9 @@ contains
        if(mod(IDIAG,10) >= 5) then
           write(6,'(A,I8,A,I8)') ' ## time steps where adaptive damping engaged:', ndamp, &
                & '   out of', NTMAX
-          if(NANDER /= 0) write(6,'(A,I9,A,I6,A,I6,A,ES10.3,A,F9.2,A)') ' ## Anderson: sweeps', and_ncall, &
-               & '   restarts', and_nrst, '   LS failures', and_nfail, '   max cond', and_condmax, &
-               & '   CPU', and_cpu, ' s'
+          if(NANDER /= 0) write(6,'(A,I9,A,I6,A,I6,A,I6,A,ES10.3,A,F9.2,A)') ' ## Anderson: sweeps', and_ncall, &
+               & '   restarts', and_nrst, '   LS failures', and_nfail, '   rejected', and_nrej, &
+               & '   max cond', and_condmax, '   CPU', and_cpu, ' s'
           write(6,'(A,4I8,A,I8)') ' ## non-smooth guards fired (MINUS_CHECK ID=0,1,2,3):', &
                & nsm_minus(1:4), '   tiny-zeroing (eq,step) pairs:', nsm_tiny
           if(nsm_tiny > 0) then
@@ -2177,12 +2179,19 @@ contains
 !   alone: the linear model behind the mixing does not hold there, and the
 !   extrapolation drives the iterate away, as in the first steps from the
 !   initial profiles at NRMAX = 960.
+!   The extrapolation is not a Picard image and TXCHCK never sees it: where it
+!   leaves a density or a pressure negative, or any value NaN/Inf, the next sweep
+!   would evaluate the coefficients there (all values NaN in the 6.4 MW case).
+!   Such a step is rejected: XN is g_k, the Picard image that passed TXCHCK, and
+!   the history is dropped, so that it holds differences of accepted iterates only.
 
-    use tx_commons, only : NQMAX, NRMAX, IDIAG, NT, NANDER
+    use tx_commons, only : NQMAX, NRMAX, IDIAG, NT, NANDER, nonfinite, &
+         &                 LQe1, LQi1, LQz1, LQb1, LQr1, LQe5, LQi5, LQz5
     integer(4), intent(in) :: IC
     logical, intent(in) :: noncontracting
     real(8), parameter :: GAMCAP = 1.d3, RCOND = 1.d-12
     integer(4) :: N, mdep, NQ, NR, j, m, info, rank, lwork, liwork
+    real(8), dimension(:,:), allocatable :: xa
     real(8) :: wq(1), t0, t1
     integer(4) :: iwq(1)
 
@@ -2251,13 +2260,25 @@ contains
        call DGELSD(N, m, 1, and_A, N, and_b, N, and_s, RCOND, rank, and_work, lwork, and_iwork, info)
        if(info == 0 .and. maxval(abs(and_b(1:m))) < GAMCAP) then
           if(and_s(max(rank,1)) > 0.d0) and_condmax = max(and_condmax, and_s(1) / and_s(max(rank,1)))
+          allocate(xa, mold=XN)
           do NR = 0, NRMAX
              do NQ = 1, NQMAX
                 j = NQMAX*NR + NQ
-                XN(NR,NQ) = ( and_g(j) - sum( and_b(1:m) * (and_dx(j,1:m) + and_df(j,1:m)) ) ) &
+                xa(NR,NQ) = ( and_g(j) - sum( and_b(1:m) * (and_dx(j,1:m) + and_df(j,1:m)) ) ) &
                      &    * and_sc(NQ)
              end do
           end do
+          if(any(nonfinite(xa)) .or. any(xa(:,LQe1) < 0.d0) .or. any(xa(:,LQi1) < 0.d0) .or. &
+               & any(xa(:,LQz1) < 0.d0) .or. any(xa(:,LQb1) < 0.d0) .or. any(xa(:,LQr1) < 0.d0) .or. &
+               & any(xa(:,LQe5) < 0.d0) .or. any(xa(:,LQi5) < 0.d0) .or. any(xa(:,LQz5) < 0.d0)) then
+             ! XN stays g_k
+             and_k = 0 ; and_nrej = and_nrej + 1
+             if(mod(IDIAG,10) >= 3) write(6,'(A,I6,A,I4)') &
+                  & ' ## Anderson step rejected (negative density or pressure, or NaN/Inf): NT =', NT, ', IC =', IC
+          else
+             XN = xa
+          end if
+          deallocate(xa)
        else
           if(info /= 0) then
              and_nfail = and_nfail + 1
