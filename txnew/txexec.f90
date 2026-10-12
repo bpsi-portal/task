@@ -224,7 +224,7 @@ contains
     if(NTMAX /= 0) DIP = (rIPe - rIPs) / NTMAX
     ICSUM = 0
     ndamp = 0
-    nretried = 0 ; nsub = 1 ; nsubmax = 1 ; nretryfail = 0 ; nnotconv = 0
+    nretried = 0 ; nsub = 1 ; nsubmax = 1 ; nretryfail = 0 ; nnotconv = 0 ; stepnc = .false.
     and_ncall = 0 ; and_nrst = 0 ; and_nfail = 0 ; and_nrej = 0 ; and_condmax = 0.d0 ; and_cpu = 0.d0
 #ifdef TX_PROFILE
     call CPU_TIME(prof_total_t0)
