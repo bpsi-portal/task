@@ -14,7 +14,7 @@ contains
   subroutine TXMENU
 
     use tx_commons, only : allocate_txcomm, deallocate_txcomm, &
-         &              rMU0, IERR, rMUb1, rMUb2, TMAX, DT, NTMAX, NT, T_TX, FcoefETB, ETBheld, PNBHT1, &
+         &              rMU0, IERR, rMUb1, rMUb2, TMAX, DT, NTMAX, NT, NTCUM, T_TX, FcoefETB, ETBheld, PNBHT1, &
          &              PNBHT2, PNBHP, PNBHex, X, LQm4, NRMAX, TPRE, PNBCD, &
          &              iflag_file, &
          &              DelRho, DelN, Rho, LQe1, LQi1, LQz1, achg, ICONT, IRPIN, array_init_NR, stdin_ended
@@ -87,8 +87,10 @@ contains
           T_TX = 0.D0
           TPRE = 0.D0
           ! A RUN starts at step 0 (NT is read in TXPROF, by the ETB factor), and the
-          ! ETB factor ramps down again from 1
+          ! ETB factor ramps down again from 1.  NTCUM counts the steps of the run
+          ! through CONT, SAVE and LOAD (a record only, not used in the calculation).
           NT = 0
+          NTCUM = 0
           FcoefETB = 1.d0
           ETBheld = .false.
           IERR = 0
