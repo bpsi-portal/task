@@ -28,6 +28,7 @@ After V5.62.00 (particle transport, wall, time stepping):
   imodel_neo(4) = 0
                   matrix inversion without the potato closure near the axis
                                                       (now 1, orbit-averaged potato)
+  EPS     = 1e-3  Picard convergence on the increment (now 1e-5)
 
 Not restored by any input (implementation changes; the results differ slightly):
   - the constant term of the Tala momentum pinch is inward (V5.52: outward, a sign error
@@ -68,4 +69,5 @@ a file keeps its closures.
   RWALLIZ = 0.d0
   NRETRY  = 0
   imodel_neo(4) = 0
+  EPS     = 1.d-3
  &end
