@@ -44,6 +44,8 @@ contains
 
     if (IERR /= 0) then
        write(6,*) '### ERROR(TXEXEC) : Error should be cleared.'
+       write(6,'(A,ES12.4,A)') '    The last run stopped on an error at T =', T_TX, &
+            & ' (the last accepted step); a parameter input (P) clears it for a CONT.'
        return
     end if
 
@@ -97,7 +99,7 @@ contains
          &                 tiny_cap, EPS, IDIAG, NTSTEP, ICCALC, iaxproj, &
          &                 FSRP, MODEAV, XOLD, bdf_history_ready, bdf_history_dt, &
          &                 NT, DT, rIP, MDLPCK, ICONT, AVE_IC, MODECV, oldmix, oldmixa, Var, RLXN0, MDLN0FL, LQn1, LQn3, NC0CAP, &
-         &                 NANDER, NRETRY
+         &                 NANDER, NRETRY, FcoefETB, ETBheld
     use tx_variables
     use tx_coefficients, only : TXCALA
     use tx_graphic, only : TX_GRAPH_SAVE, TXSTGT, TXSTGV, TXSTGR, TXSTGQ, &
@@ -129,6 +131,9 @@ contains
     real(8) :: DTfull, Tstart, DTprev0
     real(8), dimension(:,:), allocatable :: Xstart, XOLDstart
     logical :: history0
+    ! --- the last accepted step, restored when a step fails ---
+    real(8) :: Tacc, rIPacc, FcoefETB0
+    logical :: ETBheld0
     ! --- adaptive under-relaxation ---------------------------------------
     !  Below dt ~ 3e-6 the fixed-point map for the radial flows stops
     !  contracting.  It does not blow up: the sweep increment simply sits at
@@ -242,6 +247,7 @@ contains
     if(IGBDF /= 0 .and. .not. bdf_history_ready) XOLD = X
 
     L_NTDO:do NTDO = 1, NTMAX
+       Tacc = T_TX ; rIPacc = rIP ; FcoefETB0 = FcoefETB ; ETBheld0 = ETBheld
        NT = NTDO
        NTCUM = NTCUM + 1
        T_TX = TIME0 + DT*NT
@@ -314,8 +320,7 @@ contains
                 write(6,'(3(A,I6))') '### ERROR(TXLOOP) : Matrix BA is singular at ',  &
                      &              NT, ' -', IC, ' step. IERR=',IERR
                 IERR = 1
-                XN = XP
-                goto 180
+                goto 170
              end if
           else if(MDLPCK == 2) then
 #ifdef TX_SOLVER_VERIFY
@@ -337,8 +342,7 @@ contains
                 write(6,'(3(A,I6))') '### ERROR(TXLOOP) : BLKTRI, NT = ',  &
                      &              NT, ' -', IC, ' step. IERR=',ierr_la
                 IERR = 1
-                XN = XP
-                goto 180
+                goto 170
              end if
 #ifdef TX_SOLVER_VERIFY
              if(.not. solver_verify_done) then
@@ -387,8 +391,7 @@ contains
                 write(6,'(3(A,I6))') '### ERROR(TXLOOP) : DGBSVX, NT = ',  &
                      &              NT, ' -', IC, ' step. IERR=',ierr_la
                 IERR = 1
-                XN = XP
-                goto 180
+                goto 170
              end if
           else
              ! +++ NOTE ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -440,8 +443,7 @@ contains
                 write(6,'(3(A,I6))') '### ERROR(TXLOOP) : GBSV, NT = ',  &
                      &              NT, ' -', IC, ' step. IERR=',ierr_la
                 IERR = 1
-                XN = XP
-                goto 180
+                goto 170
              end if
 #ifdef TX_SOLVER_BENCH
              if(.not. solver_bench_done) then
@@ -495,22 +497,7 @@ contains
 
           ! Check negative density or temperature in variable matrix
           call TXCHCK(NT,IC,XN,IERR)
-          if (IERR /= 0) then
-             X = XN
-             call TXCALV(X)
-!             call TXCALC(IC)
-             call TXGLOB
-#ifdef TX_PROFILE
-             call CPU_TIME(prof_t0)
-#endif
-             call TX_GRAPH_SAVE
-#ifdef TX_PROFILE
-             call CPU_TIME(prof_t1)
-             prof_io_sum = prof_io_sum + (prof_t1 - prof_t0)
-#endif
-             if(nsub > 1) DT = DTfull
-             return
-          end if
+          if (IERR /= 0) goto 170
 
 !          if(IC == 1) EXIT L_IC
 
@@ -720,7 +707,7 @@ contains
           IERR = 1
           write(6,'(2(A,I6))') '### ERROR(TXLOOP) : Solutions not converged at ',  &
                &              NT, ' -', IC
-          goto 180
+          goto 170
        end if
 
        ! Save past X for BDF
@@ -764,7 +751,6 @@ contains
        prof_io_sum = prof_io_sum + (prof_t1 - prof_t0)
 #endif
 
-180    if(nsub > 1) DT = DTfull
        if (mod(NT, NGRSTP) == 0) then
 #ifdef TX_PROFILE
           call CPU_TIME(prof_t0)
@@ -814,11 +800,49 @@ contains
 
 !       call cal_flux
 
-       if (IERR /= 0) exit L_NTDO
+       cycle L_NTDO
+
+       ! The step failed: a singular matrix, a negative density or temperature (TXCHCK),
+       ! or no convergence with EPS < 0.  Its iterate is not a result and is not stored,
+       ! in X or in the graphs.  The run stops on the last accepted step, with the time,
+       ! the plasma current, the step counts, the BDF history and the ETB factor of that
+       ! step, so that SAVE writes that state and a CONT (after the parameter change that
+       ! clears IERR) or a LOAD continues from it.  Within a retried step (nsub > 1) that
+       ! is the state at the start of the step, as when the retry began.  TXGLOB is not
+       ! called again: the global quantities of that step are already in place, and a
+       ! second call at the same time would take differences over a zero interval.
+170    if(nsub > 1) then
+          DT = DTfull ; X = Xstart
+          bdf_history_ready = history0 ; bdf_history_dt = DTprev0
+          if(IGBDF /= 0) then
+             if(history0) then
+                XOLD = XOLDstart
+             else
+                XOLD = X
+             end if
+          end if
+       end if
+       T_TX = Tacc ; rIP = rIPacc
+       NT = NT - 1 ; NTCUM = NTCUM - 1
+       ! The coefficients of X again, with the ETB factor that was used for them: marked
+       ! as held for this call so that TXCALV does not ramp it by NT.
+       FcoefETB = FcoefETB0 ; ETBheld = .true.
+       call TXCALV(X,1)
+       call TXCALC(IC)
+       ETBheld = ETBheld0
+       write(6,'(A,I7,A,ES12.4,A)') '### ERROR(TXLOOP) : the run stops at the last accepted step, NT =', &
+            & NT, ', T =', T_TX, '; the failed step is discarded'
+       exit L_NTDO
 
     end do L_NTDO
 
-    rIPs = rIPe
+    ! The next run ramps the plasma current from where this one leaves it: rIPe after a
+    ! complete run, the current of the last accepted step after a failure.
+    if(IERR == 0) then
+       rIPs = rIPe
+    else
+       rIPs = rIP
+    end if
 
     if(NRETRY > 0 .and. nretried > 0) then
        write(6,'(A,I7,A,I7,A,F6.2,A,I3,A,I7)') ' ## NRETRY: steps retaken', nretried, ' of', NT, &
