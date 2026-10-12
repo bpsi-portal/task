@@ -696,13 +696,20 @@ contains
     !       historical behaviour; ICMAX or more removes the lag altogether.
     ICCALC = 2
 
-    !   Time-advancing method
-    !     ADV = 0     : Explicit scheme       (Not usable)
-    !           0.5   : Crank-Nicolson scheme (Not usable)
-    !           2/3   : Galerkin scheme       (Not usable)
-    !           0.729 : Minimum value at which a simulation can be run.
-    !           0.878 : Liniger scheme
-    !           1     : Implicit scheme       (Recommended)
+    !   Time-advancing method: the weight of the new time level in the theta
+    !     scheme, used with IGBDF = 0 (with BDF2, the default, the scheme sets ADV)
+    !     ADV = 0        : Explicit scheme       (Not recommended)
+    !           0.5      : Crank-Nicolson scheme (unstable in the standard cases)
+    !           0.9-0.95 : ran 500 steps (0.05 s at DT = 1e-4) in the standard
+    !                      NRMAX = 60 cases with NBI, CDBM and fixed transport;
+    !                      stability over longer runs is not verified
+    !           1        : Fully implicit scheme (Recommended)
+    !     The theta scheme is not L-stable: a mode much faster than DT is not damped
+    !     but changes sign every step, by the factor -(1 - ADV)/ADV, and TX has such
+    !     modes (the rows without a time derivative, the electron inertia).  In the
+    !     standard cases ADV = 0.5-0.8 stopped on a negative temperature or density
+    !     within the first 25 steps at DT = 1e-4, and a smaller DT is no cure
+    !     (ADV = 0.5-0.7 failed in the first step at DT = 1e-7).
     ADV = 1.d0
 
     !   Mode of Backward Differential (Gear's) Formula (Second-order accuracy)
