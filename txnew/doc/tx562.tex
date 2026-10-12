@@ -4000,6 +4000,53 @@ either case.
   later points are unchanged.
 \item Step count.  \texttt{NTCUM}, the number of steps of a run through \texttt{CONT},
   \texttt{SAVE} and \texttt{LOAD} (a record only), now starts again from 0 with \texttt{R}.
+\item Default of \texttt{EPS}: $10^{-5}$ (was $10^{-3}$).  The sweeps of a step stop on the
+  increment, $\max_j|\Delta X_{q,j}| \le \texttt{EPS}\,\mathrm{rms}(X_q)$ (Sec.~\ref{sec:lqm2tol}), not
+  on the error: a mode that contracts by a factor $\lambda$ per sweep is left about $1/(1-\lambda)$
+  times the last increment from the solution of the step.  With NBI the poloidal flows near the axis
+  are such a mode ($|\lambda| \approx 0.9$--$0.99$), and their error was 25--120 \texttt{EPS}.  In the
+  standard cases (\texttt{NRMAX} = 60, $\Delta t = 10^{-4}$\,s, BDF2, 1\,s, reference
+  \texttt{EPS} = $10^{-6}$) $10^{-3}$ left the axis flows, $dT_\r{i}/d\rho$, $E_r$ and $j$ 1.5--150
+  times above the time-discretization error (the difference from $\Delta t/2$), and $dT_\r{i}$, $X$
+  and $u_{\r{i}\theta}$ 1.3--5 times above it off the axis; without NBI $10^{-3}$ was enough.
+  $10^{-5}$ brings the error to about the time-discretization error or below, with and without NBI,
+  with CDBM and with fixed transport (the axis flows with fixed transport and NBI are 1--2.8 times
+  that error), and the densities, temperatures and global quantities far below it.  It takes
+  13--65\% more sweeps per step (1\,s at \texttt{NRMAX} = 60, 0.3\,s at 120, 0.05\,s at 240 with
+  $\Delta t = 5\times10^{-5}$\,s) and 19--25\% more run time at \texttt{NRMAX} = 60, 20--42\% at 120
+  and 15--23\% at 240 (\texttt{NANDER} = $-20$, or $-50$ at 240; 36--59\% with \texttt{NANDER} = 0).
+  The steps that reach \texttt{ICMAX} and are taken again at $\Delta t/2$ are those of $10^{-3}$, all
+  within the first 3.2\,ms, with one more in three of the fourteen cases.  At \texttt{NRMAX} = 240
+  the error against $10^{-6}$ (0.05\,s) is more than an order of magnitude below the
+  time-discretization error.  A smaller $\Delta t$ needs a smaller \texttt{EPS}: the test does not
+  depend on $\Delta t$, and the number of steps grows.  Below about
+  $10^{-7}$ at \texttt{NRMAX} = 60 ($10^{-6}$ at 120) the radial beam flow (\texttt{LQb2}) reaches its
+  rounding floor and steps run to \texttt{ICMAX}.  Inputs that set \texttt{EPS} are unchanged, and
+  \texttt{LOAD} takes the value in the file (a file written with the former default continues with
+  $10^{-3}$).  \texttt{parm/txparm.v552default} sets \texttt{EPS} = $10^{-3}$.
+\item The theta scheme (\texttt{IGBDF} = 0, \texttt{ADV} the weight of the new time level; with BDF2,
+  the default, the scheme sets \texttt{ADV} itself).  The scheme is A-stable for
+  $\texttt{ADV} \ge 1/2$ but L-stable only for $\texttt{ADV} = 1$: a mode much faster than $\Delta t$ is
+  multiplied by $-(1-\texttt{ADV})/\texttt{ADV}$ per step (1 at 0.5, 0.43 at 0.7, 0.11 at 0.9), so that
+  it changes sign every step instead of decaying.  TX has rows without a time derivative
+  (\texttt{LQm1}, the radial flows \texttt{LQ*2}, the poloidal flows \texttt{LQ*7}, \texttt{LQ*8}) and
+  modes far faster than any usable $\Delta t$ (the electron inertia), and the initial profiles are far
+  from those relations.  In the standard cases (\texttt{NRMAX} = 60, CDBM and fixed transport, with and
+  without NBI, $\Delta t = 10^{-4}$\,s) \texttt{ADV} = 0.5 and 0.6 stopped in the first step on a
+  negative temperature, 0.7 within 4 steps and 0.8 within 16, and a smaller $\Delta t$ is no cure
+  (0.5--0.7 failed in the first step at $\Delta t = 10^{-7}$\,s); in a run with \texttt{ADV} = 0.7 that
+  went on, the ratio of successive step increments of the fast variables approached
+  $-(1-\texttt{ADV})/\texttt{ADV}$.  Taking the rows without a time derivative at the new time level
+  did not change this, and no error of the implementation was found: the failures are those of the
+  time discretization.  \texttt{ADV} = 0.9 and 0.95 ran 500 steps (0.05\,s) in those cases with NBI,
+  with at most two steps not converged at $\Delta t/2$; their stability over longer runs is not
+  verified.  \texttt{ADV} = 1 (fully implicit) is the recommended value for the theta scheme, and BDF2
+  remains the default.  The comment of \texttt{ADV} in \texttt{txinit.f90} no longer lists 2/3
+  (Galerkin), 0.729 (an empirical lower limit of an older code) and 0.878 (Liniger).
+\item The log of a failed step.  The message gives the time of the step that failed (and the
+  substep, in a retried step) and, on a line of its own, the step number and the time of the last
+  accepted step, at which the run stops; the step line at the end of the run names that step without
+  the sweep count of the failed one.
 \end{itemize}
 
 \begin{thebibliography}{9}
