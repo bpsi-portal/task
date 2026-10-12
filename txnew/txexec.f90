@@ -132,7 +132,7 @@ contains
     real(8), dimension(:,:), allocatable :: Xstart, XOLDstart
     logical :: history0
     ! --- the last accepted step, restored when a step fails ---
-    real(8) :: Tacc, rIPacc, FcoefETB0
+    real(8) :: Tacc, rIPacc, FcoefETB0, Tfail
     logical :: ETBheld0
     ! --- adaptive under-relaxation ---------------------------------------
     !  Below dt ~ 3e-6 the fixed-point map for the radial flows stops
@@ -811,7 +811,8 @@ contains
        ! is the state at the start of the step, as when the retry began.  TXGLOB is not
        ! called again: the global quantities of that step are already in place, and a
        ! second call at the same time would take differences over a zero interval.
-170    if(nsub > 1) then
+170    Tfail = T_TX
+       if(nsub > 1) then
           DT = DTfull ; X = Xstart
           bdf_history_ready = history0 ; bdf_history_dt = DTprev0
           if(IGBDF /= 0) then
@@ -830,8 +831,15 @@ contains
        call TXCALV(X,1)
        call TXCALC(IC)
        ETBheld = ETBheld0
-       write(6,'(A,I7,A,ES12.4,A)') '### ERROR(TXLOOP) : the run stops at the last accepted step, NT =', &
-            & NT, ', T =', T_TX, '; the failed step is discarded'
+       if(nsub > 1) then
+          write(6,'(A,ES12.4,A,I7,2(A,I3),A)') '### ERROR(TXLOOP) : the step to T =', Tfail, &
+               & ' (NT =', NT + 1, ', substep', isub, ' of', nsub, ') failed and is discarded.'
+       else
+          write(6,'(A,ES12.4,A,I7,A)') '### ERROR(TXLOOP) : the step to T =', Tfail, &
+               & ' (NT =', NT + 1, ') failed and is discarded.'
+       end if
+       write(6,'(A,I7,A,ES12.4,A)') '    The run stops at the last accepted step: NT =', &
+            & NT, ', T =', T_TX, '.'
        exit L_NTDO
 
     end do L_NTDO
@@ -858,7 +866,9 @@ contains
 #ifdef TX_PROFILE
     call CPU_TIME(prof_t0)
 #endif
-    if(IC == ICMAX) then
+    if(IERR /= 0) then   ! IC is that of the failed step
+       write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   (the last accepted step)")') NT,T_TX
+    else if(IC == ICMAX) then
        write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3,"  *")') NT,T_TX,IC
     else
        write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3)') NT,T_TX,IC
