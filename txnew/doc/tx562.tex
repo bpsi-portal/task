@@ -4047,6 +4047,33 @@ either case.
   substep, in a retried step) and, on a line of its own, the step number and the time of the last
   accepted step, at which the run stops; the step line at the end of the run names that step without
   the sweep count of the failed one.
+\item Non-finite iterates.  \texttt{TXCHCK} now tests the iterate of a sweep for NaN and Inf before
+  the signs, from the exponent bits (\texttt{nonfinite} in \texttt{tx\_commons}: the optimized build
+  may assume finite operands and fold \texttt{x /= x} to false), reports their number with the first
+  variable and node, and the step fails as on a negative density or temperature.  A NaN iterate
+  used to be reported as a negative density on the axis.
+\item The Anderson step.  The extrapolated iterate is not a Picard image, and \texttt{TXCHCK} does
+  not see it: in the 6.4\,MW case continued by \texttt{LOAD} it left the impurity pressure negative on
+  the axis, the next sweep evaluated the coefficients there, and every value became NaN.  A step
+  that leaves a density or a pressure negative, or any value non-finite, is now rejected: the
+  Picard image of the sweep (which passed \texttt{TXCHCK}) is kept and the history is dropped.  The
+  number of rejections is printed at the end of a run; a run without a rejection is unchanged bit
+  for bit.  The Picard image itself is never mixed when it is invalid: \texttt{TXCHCK} stops the
+  step before.
+\item \texttt{beam\_energy\_ratio} (the effective beam energy in the matrix inversion).  A negative
+  or non-finite $T_\r{i}$ made the search for the bracket loop forever.  Such inputs now return
+  $x_0$ (or 0 when $x_0$ itself is invalid), the bracket is doubled at most 60 times, a non-finite
+  value ends the search with $x_0$, and a warning is printed; valid inputs are unchanged.
+\item \texttt{LOAD} of a file written after a failed step.  The error flag of the file was read into
+  the variable that then took the status of the allocation; in a process whose arrays were already
+  allocated the status was not set, so such a file freed every array and stopped the program.  The
+  flag is now read apart, and \texttt{LOAD} clears it as before: a \texttt{LOAD} in the same process
+  gives the state it gives in a new process.
+\item Steps accepted without convergence.  With \texttt{EPS} $> 0$ a step, or with \texttt{NRETRY} a
+  substep at the finest size, that reaches \texttt{ICMAX} is accepted.  Each now prints a warning
+  with its time, the substep, the largest increment and \texttt{EPS}, the step line is marked
+  ``*'', and the run ends with their number.  Before, a step whose first substep had been accepted
+  so and whose second converged looked converged.
 \end{itemize}
 
 \begin{thebibliography}{9}
