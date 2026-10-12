@@ -674,9 +674,19 @@ contains
     DT = 1.D-3
 
     !   Convergence parameter
+    !     The sweeps of a step stop when the change of every variable over a sweep
+    !     is below EPS times its rms (LQm2 and LQm3 with their rounding floors).
+    !     This tests the increment, not the error: a slowly contracting mode (the
+    !     poloidal flows near the axis with NBI) is left about 1/(1 - rate) times
+    !     the last increment from the solution of the step, 25-120 EPS in the
+    !     standard NBI cases.  1e-5 brings it to about the time-discretization
+    !     error at DT = 1e-4 or below, with and without NBI, with CDBM and fixed
+    !     transport; 1e-3, the default before, left up to 150 times that error with
+    !     NBI.  A smaller DT needs a smaller EPS.  Below about 1e-7 at NRMAX = 60
+    !     the beam flow reaches its rounding floor and steps run to ICMAX.
     !!  !      Convergence calculation is going on until IC = ICMAX when EPS is negative.
     !     Computation continues even if not converged at IC = ICMAX when EPS is positive.
-    EPS = 1.D-3
+    EPS = 1.D-5
 
     !   Iteration
     ICMAX = 100
