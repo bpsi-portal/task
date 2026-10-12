@@ -751,4 +751,12 @@ contains
 
   end subroutine deallocate_txcomm
 
+  ! .true. for NaN and +-Inf (all exponent bits set).  Read from the bits because the
+  ! optimized build (-Ofast, -fp-model fast) may assume finite operands and fold
+  ! x /= x or ieee_is_nan(x) to .false.
+  elemental logical function nonfinite(x)
+    real(8), intent(in) :: x
+    nonfinite = iand(ishft(transfer(x, 0_8), -52), 2047_8) == 2047_8
+  end function nonfinite
+
 end module tx_commons
