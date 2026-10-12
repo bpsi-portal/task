@@ -124,6 +124,10 @@ contains
     ! --- retry of a non-converged step as two half steps (NRETRY = 1) ---
     integer(4) :: nsub, isub, nretried, nsubmax, nretryfail
     logical :: stepfail
+    ! --- (sub)steps accepted at IC = ICMAX without convergence (EPS > 0) ---
+    integer(4) :: nnotconv
+    logical :: stepnc
+    integer(4), parameter :: NCWARN = 20
     ! NRETRY summary: a warning when more than RETRYWARN of the steps of a run needed a retry
     real(8), parameter :: RETRYWARN = 0.1d0
     ! largest DT / bdf_history_dt kept in the variable-step BDF2 (zero-stable below 1 + sqrt(2))
@@ -220,7 +224,7 @@ contains
     if(NTMAX /= 0) DIP = (rIPe - rIPs) / NTMAX
     ICSUM = 0
     ndamp = 0
-    nretried = 0 ; nsub = 1 ; nsubmax = 1 ; nretryfail = 0
+    nretried = 0 ; nsub = 1 ; nsubmax = 1 ; nretryfail = 0 ; nnotconv = 0
     and_ncall = 0 ; and_nrst = 0 ; and_nfail = 0 ; and_nrej = 0 ; and_condmax = 0.d0 ; and_cpu = 0.d0
 #ifdef TX_PROFILE
     call CPU_TIME(prof_total_t0)
@@ -252,7 +256,7 @@ contains
        NTCUM = NTCUM + 1
        T_TX = TIME0 + DT*NT
        rIP  = rIPs  + DIP*NT
-       nsub = 1 ; isub = 0 ; stepfail = .false.
+       nsub = 1 ; isub = 0 ; stepfail = .false. ; stepnc = .false.
 
        L_SUB : do
        isub = isub + 1
@@ -590,6 +594,23 @@ contains
           cycle L_SUB
        end if
        if(NRETRY > 0 .and. IC >= ICMAX) stepfail = .true.   ! not converged at DT/2**NRETRY either
+       ! Accepted at IC = ICMAX (EPS > 0): reported for this (sub)step, since the step line
+       ! and the sweep report below show the last substep only, which may have converged.
+       if(IC >= ICMAX .and. EPS > 0.d0) then
+          stepnc = .true. ; nnotconv = nnotconv + 1
+          if(nnotconv <= NCWARN) then
+             if(MODECV == 0) then
+                IASG(1:2) = maxloc(ASG(:,:))
+                write(6,'(A,I6,A,ES11.4,2(A,I2),A,ES10.3,2(A,I3),A,ES9.2)') ' ## WARNING: NT =', NT, ', T =', T_TX, &
+                     & ', substep', isub, ' of', nsub, ' accepted at IC = ICMAX: increment', &
+                     & ASG(IASG(1)-1,IASG(2)), ' (NQ =', IASG(2), ', NR =', IASG(1)-1, '), EPS', abs(EPS)
+             else
+                write(6,'(A,I6,A,ES11.4,2(A,I2),A,ES10.3,A,ES9.2)') ' ## WARNING: NT =', NT, ', T =', T_TX, &
+                     & ', substep', isub, ' of', nsub, ' accepted at IC = ICMAX: increment', &
+                     & maxval(L2), ', EPS', abs(EPS)
+             end if
+          end if
+       end if
        if(nsub > 1 .and. isub < nsub) then   ! a substep is the start of the next one
           if(IGBDF /= 0) then
              XOLD = X ; bdf_history_ready = .true. ; bdf_history_dt = DT
@@ -735,11 +756,16 @@ contains
        call CPU_TIME(prof_t0)
 #endif
        if(IDIAGL == 0 .or. IDIAGL == 2) then
-          if ((mod(NT, NTSTEP) == 0) .and. (NT /= NTMAX)) &
-               & write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3)') NT,T_TX,IC
+          if ((mod(NT, NTSTEP) == 0) .and. (NT /= NTMAX)) then
+             if(stepnc) then   ! a (sub)step accepted without convergence
+                write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3,"  *")') NT,T_TX,IC
+             else
+                write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3)') NT,T_TX,IC
+             end if
+          end if
        else if(IDIAGL > 0) then
           if(NT /= NTMAX) then
-             if(IC-1 == ICMAX) then
+             if(stepnc) then
                 write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3,"  *")') NT,T_TX,IC
              else
                 write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3)') NT,T_TX,IC
@@ -863,6 +889,13 @@ contains
        if(nretryfail > 0) write(6,'(A)') &
             & ' ## WARNING: steps did not converge even at DT/2**NRETRY; increase NRETRY or decrease DT'
     end if
+    if(nnotconv > NCWARN) then
+       write(6,'(A,I7,A,I3,A)') ' ## WARNING:', nnotconv, &
+            & ' (sub)steps accepted without convergence at IC = ICMAX (the first', NCWARN, ' listed above)'
+    else if(nnotconv > 0) then
+       write(6,'(A,I7,A)') ' ## WARNING:', nnotconv, &
+            & ' (sub)steps accepted without convergence at IC = ICMAX (listed above)'
+    end if
     if(and_nrej > 0) write(6,'(A,I7,A)') ' ## Anderson: ', and_nrej, &
          & ' extrapolations rejected (negative density or pressure, or NaN/Inf); the Picard iterate taken'
 
@@ -871,7 +904,7 @@ contains
 #endif
     if(IERR /= 0) then   ! IC is that of the failed step
        write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   (the last accepted step)")') NT,T_TX
-    else if(IC == ICMAX) then
+    else if(stepnc) then
        write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3,"  *")') NT,T_TX,IC
     else
        write(6,'(1x,"NT =",I4,"   T =",ES9.2,"   IC =",I3)') NT,T_TX,IC
