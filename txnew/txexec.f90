@@ -21,6 +21,10 @@ module tx_main
   ! How often the non-smooth guards actually bite.  Reported at the end of a RUN
   ! under IDIAG >= 5; zero unless something fired.
   integer(4) :: nsm_minus(1:4) = 0, nsm_tiny = 0, nsm_tiny_nq(1:64) = 0
+  ! The convergence test of the last sweep passed (check_convergence).  A step that
+  ! converged at the sweep IC = ICMAX has it .true., as it has IC = ICMAX; one accepted
+  ! there without convergence (EPS > 0) has it .false.
+  logical :: swconv = .false.
   integer(4) :: solq_berr_idx = 0
   character(len=1) :: solq_equed = 'N'
   public :: TXEXEC
@@ -581,8 +585,15 @@ contains
           nsub = 2 * nsub ; isub = 0
           nsubmax = max(nsubmax, nsub)
           DT = DTfull / nsub
-          if(IDIAGL >= 1) write(6,'(A,I6,A,ES10.3)') ' ## Picard not converged at NT =', NT, &
-               & ': retried as steps of', DT
+          if(IDIAGL >= 1) then
+             if(swconv) then   ! retaken by the test IC >= ICMAX although the last sweep converged
+                write(6,'(A,I6,A,ES10.3)') ' ## Picard converged only at IC = ICMAX at NT =', NT, &
+                     & ': retried as steps of', DT
+             else
+                write(6,'(A,I6,A,ES10.3)') ' ## Picard not converged at NT =', NT, &
+                     & ': retried as steps of', DT
+             end if
+          end if
           bdf_history_ready = history0 ; bdf_history_dt = DTprev0
           if(IGBDF /= 0) then
              if(history0) then
@@ -593,21 +604,24 @@ contains
           end if
           cycle L_SUB
        end if
-       if(NRETRY > 0 .and. IC >= ICMAX) stepfail = .true.   ! not converged at DT/2**NRETRY either
-       ! Accepted at IC = ICMAX (EPS > 0): reported for this (sub)step, since the step line
-       ! and the sweep report below show the last substep only, which may have converged.
-       if(IC >= ICMAX .and. EPS > 0.d0) then
+       if(NRETRY > 0 .and. .not. swconv) stepfail = .true.   ! not converged at DT/2**NRETRY either
+       ! A (sub)step accepted without convergence, reported for this (sub)step, since the step
+       ! line and the sweep report below show the last substep only, which may have converged.
+       ! It is accepted at IC = ICMAX with EPS > 0 (MODECV = 0), and a substep before the last
+       ! one of a retried step is accepted with any EPS and MODECV: only the last substep stops
+       ! the run (istat = 2, below).  A step that converged at the sweep IC = ICMAX is not one.
+       if(.not. swconv .and. (istat /= 2 .or. (nsub > 1 .and. isub < nsub))) then
           stepnc = .true. ; nnotconv = nnotconv + 1
           if(nnotconv <= NCWARN) then
              if(MODECV == 0) then
                 IASG(1:2) = maxloc(ASG(:,:))
-                write(6,'(A,I6,A,ES11.4,2(A,I2),A,ES10.3,2(A,I3),A,ES9.2)') ' ## WARNING: NT =', NT, ', T =', T_TX, &
+                write(6,'(A,I6,A,ES11.4,2(A,I2),A,ES10.3,2(A,I3),A,ES10.2)') ' ## WARNING: NT =', NT, ', T =', T_TX, &
                      & ', substep', isub, ' of', nsub, ' accepted at IC = ICMAX: increment', &
-                     & ASG(IASG(1)-1,IASG(2)), ' (NQ =', IASG(2), ', NR =', IASG(1)-1, '), EPS', abs(EPS)
+                     & ASG(IASG(1)-1,IASG(2)), ' (NQ =', IASG(2), ', NR =', IASG(1)-1, '), EPS', EPS
              else
-                write(6,'(A,I6,A,ES11.4,2(A,I2),A,ES10.3,A,ES9.2)') ' ## WARNING: NT =', NT, ', T =', T_TX, &
+                write(6,'(A,I6,A,ES11.4,2(A,I2),A,ES10.3,A,ES10.2)') ' ## WARNING: NT =', NT, ', T =', T_TX, &
                      & ', substep', isub, ' of', nsub, ' accepted at IC = ICMAX: increment', &
-                     & maxval(L2), ', EPS', abs(EPS)
+                     & maxval(L2), ', EPS', EPS
              end if
           end if
        end if
@@ -653,8 +667,8 @@ contains
           if(MODECV == 0) then
              write(6,'(A2,3(A,X),8X,A,15X,A,12X,A,11X,A)') &
                   & "**","IC","VEQ","VNR","XP","XN","V_ERRMAX","EPS"
-             if(IC == ICMAX) then ! NOT converged
-                write(6,'(3I4,4ES17.8,A2)') IC,IASG(2),IASG(1)-1,XP(IASG(1)-1,IASG(2)), &
+             if(.not. swconv) then ! NOT converged (IC = ICMAX + 1 after the last sweep with istat = 2)
+                write(6,'(3I4,4ES17.8,A2)') min(IC,ICMAX),IASG(2),IASG(1)-1,XP(IASG(1)-1,IASG(2)), &
                      &                XN(IASG(1)-1,IASG(2)),ASG(IASG(1)-1,IASG(2)),EPSabs," *"
              else ! converged
                 IASG(1:2) = maxloc(ASG(:,:))
@@ -664,8 +678,13 @@ contains
           else
              write(6,'(A,2(A,X),5X,A,7X,A)') &
                   & "**","IC","VEQ","V_ERRMAX","EPS"
-             write(6,'(2I4,ES17.8,ES10.2)') &
-                  & IC,maxloc(L2)-1,maxval(L2),EPSabs
+             if(.not. swconv) then
+                write(6,'(2I4,ES17.8,ES10.2,A2)') &
+                     & min(IC,ICMAX),maxloc(L2)-1,maxval(L2),EPSabs," *"
+             else
+                write(6,'(2I4,ES17.8,ES10.2)') &
+                     & IC,maxloc(L2)-1,maxval(L2),EPSabs
+             end if
           end if
        end if
 #ifdef TX_PROFILE
@@ -727,7 +746,7 @@ contains
        if(istat == 2) then
           IERR = 1
           write(6,'(2(A,I6))') '### ERROR(TXLOOP) : Solutions not converged at ',  &
-               &              NT, ' -', IC
+               &              NT, ' -', min(IC,ICMAX)
           goto 170
        end if
 
@@ -2423,6 +2442,7 @@ contains
                 IDISP = IDIV + NT
                 if (NQ == NQMAX) then ! not converged
                    istat = 1
+                   swconv = .false.
                    return
                 end IF
              else if (NT /= IDISP .and. ASG(NR,NQ) > EPSabs) then
@@ -2436,6 +2456,7 @@ contains
                            & ASG(NR,NQ),EPSabs
                    end if
                    istat = 1
+                   swconv = .false.
                    return
                 end if
                 notconv = .true.   ! at IC = ICMAX
@@ -2445,6 +2466,7 @@ contains
        end do L_NQ
        ! Converged or IC == ICMAX
        IASG(1:2) = maxloc(ASG)
+       swconv = .not. notconv
 
        ! istat is intent(out): the test of EPS < 0 reads the local flag, not the
        ! value istat had in the caller (it read that before, and so depended on
@@ -2475,8 +2497,10 @@ contains
        ! with EPS < 0 (1, so the sweeps went on to ICMAX and the step failed).
        if(maxval(L2) < EPSabs) then
           istat = 0
+          swconv = .true.
           return
        end if
+       swconv = .false.
 
        if(IC /= ICMAX) then
           if(IDIAGL >= 3) then
