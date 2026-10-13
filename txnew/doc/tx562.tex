@@ -3167,6 +3167,105 @@ empirical value $k_L=0.3$, a typical upstream Mach number of the SOL flow; with
 \texttt{MDLSOL} = 1 it does not give a stable SOL on the X-point test
 equilibrium.
 
+\subsection{Target recycling of the net SOL loss (\texttt{MDLRCY}, optional)}
+\label{sec:mdlrcy}
+
+The SOL term $-\nuL(n_s-\nsup{s})$ of a density equation is a loss $\nuL n_s$ along
+the field to the targets and a supply $\nuL\nsup{s}$ from the upstream SOL, which
+holds $n_s$ near $\nsup{s}$ (\texttt{PNsSUP}, \texttt{MDLNSUP}).  The upstream SOL and
+the divertor plasma are not modelled: they act as a reservoir at the fixed density
+$\nsup{s}$.  The target recycling into the neutrals takes the same difference,
+\begin{equation}
+  S_{01} = \gamma_0\nuL(\ni-\nsup{i}),\qquad
+  S_{0\r{z}} = \gamma_\r{0z}\nuL(\nz-\nsup{z}) + \gamma_\r{i,z}\nuL(\ni-\nsup{i}),
+\end{equation}
+($\gamma_0$, $\gamma_\r{0z}$, $\gamma_\r{i,z}$ = \texttt{rGamm0}, \texttt{rGamm0zz},
+\texttt{rGamm0iz}).  Where $n_s<\nsup{s}$ the SOL gains ions from the reservoir, and
+\texttt{MDLRCY} selects what is recycled there:
+
+\begin{center}
+\begin{tabular}{|c|l|}\hline
+\texttt{MDLRCY} & target recycling \\\hline
+0 & the difference with its sign (default): a sink of neutrals where $n_s<\nsup{s}$ \\
+1 & the net loss only: $\nuL$ of each term is zero at the nodes where $n_s\le\nsup{s}$ \\\hline
+\end{tabular}
+\end{center}
+
+With 0 the supply from the reservoir is drawn from the neutrals.  A cold start has
+its SOL below $\nsup{s}$ (0.36\,$\nsup{i}$ in the standard case), and for 2--3\,ms the
+target term is a sink, $-1.2\times10^{22}$\,s$^{-1}$ at $t=0$ against a gas puff of
+$2.8\times10^{21}$\,s$^{-1}$.  In the first 2\,ms the solver output of $n_{01}$ was
+negative at every node (down to $-3.6\times10^{-5}$, then zeroed by the positivity
+check), that of $n_{02}$ at up to 60 nodes, and $\nnz$, which has no such check, stayed
+negative at up to 23 nodes ($-3.7\times10^{-5}$) until 3.1\,ms.  The sputtering source
+of the C$^0$ part (\texttt{MDLNZD} = 1) was already clipped at zero, unlike the term of
+the $\nnz$ equation.
+
+With 1 only the net loss, the part of $\nuL n_s$ that the reservoir does not give
+back, leaves the plasma for the target and returns as neutrals; the supply comes
+from the reservoir and is drawn from nothing.  The mask is taken at the nodes from the
+current Picard iterate ($\ni$ for $\gamma_0$ and $\gamma_\r{i,z}$, $\nz$ for
+$\gamma_\r{0z}$) and the element integrals keep their form, so where $n_s>\nsup{s}$
+at every node the solution is that of 0 bit for bit (checked, sweep by sweep, from the
+3\,s states of the standard case: 0.2\,s with $\gamma_\r{0z}$ = 0, with and without NBI,
+and 5\,ms with \texttt{PNsSUP(3)} halved, which makes all three terms positive).  The C$^0$
+source of \texttt{MDLNZD} = 1 is then the source of the $\nnz$ equation.  Standard
+case (\texttt{NRMAX} = 60, $\Delta t = 10^{-4}$\,s, \texttt{EPS} = $10^{-5}$), 1
+against 0:
+\begin{itemize}
+\item Positivity: in the first 2\,ms $n_{01}$ is negative only at the rounding level
+  ($-5\times10^{-11}$, up to 28 nodes), $n_{02}$ and $\nnz$ nowhere.  After 2\,ms both
+  models have $n_{01}\approx-10^{-14}$ at up to 14 nodes deep in the core, where the
+  slow neutrals have died out; this is unrelated to the recycling.
+\item Sources: at $t=0$ the target recycling is $+2.0\times10^{20}$\,s$^{-1}$ (from
+  the nodes near the separatrix with $\ni>\nsup{i}$) instead of $-1.2\times10^{22}$, and
+  the sputtering sources are positive; the ionization in the first step is
+  $1.35\times10^{21}$\,s$^{-1}$ instead of $1.3\times10^{20}$.  The net bulk-ion loss turns
+  positive after 2\,ms in both.
+\item In the first 2\,ms the neutrals of 0 were zeroed by the positivity check, those of 1 are
+  not: at 1\,ms the charge-exchange loss is 29 times, the ionization loss 7--17 times that of
+  0.  At 0.05\,s the densities differ by $1.4\times10^{-3}$ ($1.8\times10^{-3}$ without NBI),
+  the CX and ionization losses by $6\times10^{-4}$ and $1.7\times10^{-3}$, $\tau_p$ by
+  $8\times10^{-4}$.  At 3\,s (with NBI; without) $\nee$ differs by $1.2\times10^{-5}$
+  ($1.7\times10^{-5}$), the temperatures by $6\times10^{-6}$ ($6\times10^{-6}$), the
+  toroidal angular momentum by $5\times10^{-6}$ ($1.5\times10^{-4}$, where it is small),
+  $\tau_p$, $\tau_E$ and the losses by $\le9\times10^{-6}$; the line average, the central
+  values and the rotation at $\rho = 0.3$ are the same in the printed digits.
+\item The impurity neutrals differ also in the steady state (below): by 1.6\% in $\nnz$ and
+  $1.7\times10^{-4}$ in $\nz$ with NBI, 0.37\% and $8.5\times10^{-5}$ without.
+\item Iteration: the same sweeps per step (12.2--13.8 with NBI, 7.5--8.1 without), no step
+  accepted at \texttt{ICMAX}, no rejected Anderson step; the step at 2.55\,ms that 0 retried at
+  $\Delta t/2$ (with NBI) converges at $\Delta t$.
+\item \texttt{SAVE} at 1\,ms (mask active) and \texttt{LOAD} in a new process continue bit for bit
+  as the run itself with its BDF2 history dropped at that time; a file of 1 loaded with an
+  input of 0 continues with 1; an older build reads a new file, and the new build an older
+  file, bit for bit with each other.
+\end{itemize}
+
+Limits of the model.  The reservoir is implicit: its content and the particles the
+supply takes from it are not tracked, so where $n_s<\nsup{s}$ the plasma and the
+neutrals together are not conserved; with 0 the neutrals paid for the supply and
+went negative instead.  The gross flux $\nuL n_s$ still reaches the target where
+$n_s<\nsup{s}$: 1 reads the supply and the gross loss as an exchange with the
+upstream SOL of which only the difference is a loss.  Recycling the gross loss
+while keeping the supply would count the returned particles twice (a test gave a
+net inflow from the SOL of $2.7\times10^{22}$\,s$^{-1}$ and 2--4.5 times the density).
+The mask is a step in $n_s$ at $\nsup{s}$, taken at the nodes; within an element
+with one masked node the weak-form source of that node can be slightly negative.
+It has not slowed the Picard iteration in the runs above.
+For the impurity the difference is not only a start-up effect: in the steady state
+of the standard case $\nz$ is 1--3\% below $\nsup{z}$ in the outer SOL (the SOL is
+fed with carbon from upstream; net loss $-1.9\times10^{18}$\,s$^{-1}$), so with 1 the
+self-sputtering term is zero there, where it was negative with 0
+($-4\times10^{16}$ against $1.8\times10^{19}$\,s$^{-1}$ of sputtering by the bulk ions).
+With NBI the self-sputtering source is then $+2.9\times10^{17}$\,s$^{-1}$ from the inner SOL
+instead of $-4\times10^{16}$\,s$^{-1}$, and the steady states differ in the impurity as given above.
+\texttt{MDLRCY} is kept in the save file (extension record 7); \texttt{LOAD} sets it
+from a file that has the record, so a value given before \texttt{LOAD} applies only
+to older files.  \texttt{W} and \texttt{O 7} print for the bulk ions and the impurity
+the loss, the supply and their difference, and the target recycling as the equations
+take it.
+
 \subsection{Wall boundary condition for the densities}
 \label{sec:wallbc}
 
@@ -4107,6 +4206,11 @@ either case.
   \texttt{EPS} $< 0$ a converged step went on to \texttt{ICMAX} and failed; it now converges in 7--19
   sweeps per step like the default test.  (The L2 test still stops a step at \texttt{ICMAX} whatever
   the sign of \texttt{EPS}.)
+\item \texttt{MDLRCY} (2026-10-13; option, default 0): the target recycling of the SOL loss into the
+  neutrals only where it is a net loss (Sec.~\ref{sec:mdlrcy}).  With the default every run is
+  bit-identical, also through \texttt{SAVE} and \texttt{LOAD}; the switch is in extension record 7
+  of the save file.  \texttt{W} and \texttt{O 7} (\texttt{tx\_sources.dat}) print two more lines,
+  the loss and the supply of the bulk ions and of the impurity in the SOL.
 \end{itemize}
 
 \begin{thebibliography}{9}
