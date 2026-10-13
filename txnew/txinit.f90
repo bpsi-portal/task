@@ -451,7 +451,10 @@ contains
     MDLWBC = 1
     !     NANDER : Anderson acceleration of the Picard sweeps
     !              (0: off; |NANDER| history depth; < 0 without LQm1-LQm5 in the fit)
-    NANDER = 0
+    !              -20 (2026-10-13; 0 before): at EPS = 1e-5 plain Picard took 1.4-4.4
+    !              times the time, stopped at 0.08 s with NRMAX = 120, CDBM and NBI,
+    !              and left larger errors at the same EPS
+    NANDER = -20
 
     !     NRETRY : k = 1..4: a step whose Picard iteration reaches ICMAX without converging
     !              is taken again as 2, 4, ... substeps, down to DT/2**k (see TXLOOP); 0 = off.
