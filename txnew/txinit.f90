@@ -354,6 +354,11 @@ contains
     !   -nu_L (n - PNsSUP) holds the SOL density near PNsSUP (see tx562.tex).
     MDLNSUP = 1
 
+    !   Target recycling of the SOL parallel loss into the neutrals: 0 = rGamm0 nu_L
+    !   (n_i - PNsSUP(2)) and its impurity analogues of either sign (default), 1 = only
+    !   where the net loss is positive, n_s > PNsSUP(s) (see MDLRCY in txcomm.f90).
+    MDLRCY = 0
+
     !   Electron/Ion/Impurity temperature limit in SOL Upstream Plasma
     !   (Target minimum temperature in SOL)
     PTsSUP(1:3) = [0.05d0, 0.05d0, 0.05d0]
@@ -2225,7 +2230,7 @@ module tx_parameter_control
        & MODEG,MODEAV,MODEGL,MDLPCK,MODECV,oldmix,oldmixa,iaxproj,rhoaxproj,Dnfac, &
        & iSUPG3,iSUPG6,iSUPG8,SUPGstab,iprestab, &
        & MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDBSETA,MDITSN,MDITST,MDINTN,MDINTT,MDINTC,MDLETB, &
-       & MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,NANDER,NRETRY, &
+       & MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,MDLRCY,NANDER,NRETRY, &
        & iPoyntpol,iPoynttor,IDIAG,midbg,IGBDF,ISMTHD,MDLNBD,MDBMCX,imodel_neo, & ! 09/06/17~ miki_m
        & EpsHM, HPN  ! 10/08/06 miki_m
   private :: TXPLST
@@ -2458,6 +2463,8 @@ contains
        if(MDLSOLT == 1 .and. abs(MDANOM) == 3) then
           write(6,'(A)') 'XX MDLSOLT = 1 is not available with MDANOM = 3 (MMM95).'
           exit ; else ; idx = idx + 1 ; end if
+       ! target recycling of the SOL parallel loss
+       if(MDLRCY < 0 .or. MDLRCY > 1) then ; exit ; else ; idx = idx + 1 ; end if
        if(MDLSOLT == 1) then
           if(any(FSPCL /= 1.d0)) write(6,'(A)') ' ## WARNING: FSPCL is not used with MDLSOLT = 1.'
           if(exp(- (rhob - 1.d0) / WSOLT) > 0.05d0) write(6,'(A,ES10.3,A,F5.1,A)') &
@@ -2503,7 +2510,7 @@ contains
          &       ' ',8X,'MODEG,MODEAV,MODEGL,MDLPCK,MODECV,oldmix,oldmixa,iaxproj,rhoaxproj,Dnfac,'/ &
          &       ' ',8X,'iSUPG3,iSUPG6,iSUPG8,SUPGstab,iprestab,'/ &
          &       ' ',8X,'MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDBSETA,MDITSN,MDITST,MDINTN,MDINTT,MDINTC,MDLETB,' / & 
-         &       ' ',8X,'MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,NANDER,NRETRY,' / &
+         &       ' ',8X,'MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,MDLRCY,NANDER,NRETRY,' / &
          &       ' ',8X,'iPoyntpol,iPoynttor,IDIAG,midbg,IGBDF,ISMTHD,MDLNBD,MDBMCX,imodel_neo')
   end subroutine TXPLST
 
@@ -2656,6 +2663,7 @@ contains
          &   'MDLNZD     ', MDLNZD     , 'MDLN0FL    ', MDLN0FL    ,  &
          &   'MDLSOL     ', MDLSOL     , 'MDLWBC     ', MDLWBC     ,  &
          &   'MDLNSUP    ', MDLNSUP    , 'MDLSOLT    ', MDLSOLT    ,  &
+         &   'MDLRCY     ', MDLRCY     ,  &
          &   'imodelneo1 ', imodel_neo(1), 'imodelneo2 ', imodel_neo(2),  &
          &   'imodelneo3 ', imodel_neo(3), 'imodelneo4 ', imodel_neo(4),  &
          &   'imodelneo5 ', imodel_neo(5), 'imodelneo6 ', imodel_neo(6)!,  &

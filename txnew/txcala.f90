@@ -3777,12 +3777,13 @@ contains
     ELM(:,:,4,NEQ) = - FSCX * 1.D20 * fem_int(20,SiVcxA,Var(:,2)%n)
     NLC(4,NEQ) = LQn1
 
-    ! Recycling in divertor plasma region
+    ! Recycling in divertor plasma region, rGamm0 nu_L (n_i - PNsSUP(2)); with
+    ! MDLRCY = 1 only where n_i > PNsSUP(2) (rNuL_rcy)
 
-    ELM(:,:,5,NEQ) =   rGamm0             * fem_int( 2,rNuL)
+    ELM(:,:,5,NEQ) =   rGamm0             * fem_int( 2,rNuL_rcy(2))
     NLC(5,NEQ) = LQi1
 
-    ELM(:,:,6,NEQ) = - rGamm0 * PNsSUP(2) * fem_int(-1,rNuL)
+    ELM(:,:,6,NEQ) = - rGamm0 * PNsSUP(2) * fem_int(-1,rNuL_rcy(2))
     NLC(6,NEQ) = 0
 
 !    ! Gas puff (alternative way to impose B.C.;
@@ -3911,20 +3912,21 @@ contains
     ELM(:,:,4,NEQ) =   FSCX  * 1.D20 * fem_int(20,SiVa6A, Var(:,1)%n)
     NLC(4,NEQ) = LQz1
 
-    ! Recycling due to self sputtering in divertor plasma region
+    ! Recycling due to self sputtering in divertor plasma region; with MDLRCY = 1
+    ! only where n_z > PNsSUP(3), and below only where n_i > PNsSUP(2) (rNuL_rcy)
 
-    ELM(:,:,5,NEQ) =   rGamm0zz             * fem_int( 2,rNuL)
+    ELM(:,:,5,NEQ) =   rGamm0zz             * fem_int( 2,rNuL_rcy(i))
     NLC(5,NEQ) = LQz1
 
-    ELM(:,:,6,NEQ) = - rGamm0zz * PNsSUP(i) * fem_int(-1,rNuL)
+    ELM(:,:,6,NEQ) = - rGamm0zz * PNsSUP(i) * fem_int(-1,rNuL_rcy(i))
     NLC(6,NEQ) = 0
 
     ! Recycling due to sputtering by bulk ions in divertor plasma region
 
-    ELM(:,:,7,NEQ) =   rGamm0iz             * fem_int( 2,rNuL)
+    ELM(:,:,7,NEQ) =   rGamm0iz             * fem_int( 2,rNuL_rcy(j))
     NLC(7,NEQ) = LQi1
 
-    ELM(:,:,8,NEQ) = - rGamm0iz * PNsSUP(j) * fem_int(-1,rNuL)
+    ELM(:,:,8,NEQ) = - rGamm0iz * PNsSUP(j) * fem_int(-1,rNuL_rcy(j))
     NLC(8,NEQ) = 0
 
     NLCMAX(NEQ) = 8

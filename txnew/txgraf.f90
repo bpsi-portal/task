@@ -1329,8 +1329,14 @@ contains
           GYL%v(NR,NG,355) = 0.0
        end if
        !  sputtering source of the bundle, R_zz nu_L (n_z - n_z,div) + R_iz nu_L (n_i - n_i,div)
-       GYL%v(NR,NG,356) = real(( rGamm0zz * rNuL(NR) * (Var(NR,3)%n - PNsSUP(3)) &
-            &                 + rGamm0iz * rNuL(NR) * (Var(NR,2)%n - PNsSUP(2)) ) * 1.d20)
+       !  (with MDLRCY = 1 each term only where it is positive, as in LQnzCC)
+       if( MDLRCY == 1 ) then
+          GYL%v(NR,NG,356) = real(( rGamm0zz * rNuL(NR) * max(Var(NR,3)%n - PNsSUP(3), 0.d0) &
+               &                 + rGamm0iz * rNuL(NR) * max(Var(NR,2)%n - PNsSUP(2), 0.d0) ) * 1.d20)
+       else
+          GYL%v(NR,NG,356) = real(( rGamm0zz * rNuL(NR) * (Var(NR,3)%n - PNsSUP(3)) &
+               &                 + rGamm0iz * rNuL(NR) * (Var(NR,2)%n - PNsSUP(2)) ) * 1.d20)
+       end if
        !  parallel loss of the charged part of the bundle, (1 - R_zz) nu_L (n_0z - n_C0)
        if( MDLNZD == 1 ) then
           GYL%v(NR,NG,357) = real((1.d0 - rGamm0zz) * rNuL(NR) * (PN0zV(NR) - nC0z(NR)) * 1.d20)

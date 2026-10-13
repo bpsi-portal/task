@@ -229,7 +229,7 @@ subroutine TXSAVE
        & IGBDF,ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor, &
        & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,thrp,kappa,CPsi,VPoynt,PoyntI,imodel_neo,MDLNSUP, &
        & RWALL,RWALLZ,RWALLIZ,FSTPTM,PROFD2C,PROFD2W,NSM,MDLSOLT,DSOLT,CHISOLT,RMUSOLT,WSOLT, &
-       & FcoefETB,ETBheld
+       & FcoefETB,ETBheld,MDLRCY
   use tx_graphic, only : NGYTM,NGYVM,MODEG,MODEGL,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP,GTY,GVY,GQY,GTX,GVX
   use tx_interface, only : TOUPPER
 
@@ -330,7 +330,8 @@ subroutine TXSAVE
   ! per version (1: MDLNSUP, 2: main-wall recycling, 3: FSTPTM, 4: centre and width of
   ! the PROFD2 modification, which were constants before, 5: the SOL transport
   ! connection MDLSOLT and its inputs, 6: the ETB factor and whether it is held,
-  ! state of the run that the step count does not always give).  An older TXLOAD stops
+  ! state of the run that the step count does not always give, 7: the target
+  ! recycling MDLRCY).  An older TXLOAD stops
   ! before the records it does not know; TXLOAD reads each one only when it is present.
   ! FSTPTM was missing from the layout although FSVAHL and the other FS* inputs are in it.
   write(io) 1, MDLNSUP
@@ -339,6 +340,7 @@ subroutine TXSAVE
   write(io) 4, PROFD2C, PROFD2W
   write(io) 5, MDLSOLT, DSOLT, CHISOLT(1:NSM), RMUSOLT(1:NSM), WSOLT
   write(io) 6, FcoefETB, merge(1, 0, ETBheld)
+  write(io) 7, MDLRCY
   close(io)
   write(6,*) '# DATA WAS SUCCESSFULLY SAVED IN THE FILE.'
 
@@ -371,7 +373,7 @@ subroutine TXLOAD(IST)
        & ErV,PTsV_FIX,PNsV_FIX,ErV_FIX, &
        & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM,bdf_history_ready,stdin_ended, &
        & MDLNSUP, PNsSUPlast, RWALL, RWALLZ, RWALLIZ, FSTPTM, PROFD2C, PROFD2W, &
-       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT, FcoefETB, FrdcETB, ETBheld
+       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT, FcoefETB, FrdcETB, ETBheld, MDLRCY
   use tx_init, only : TXCALM
   use tx_graphic, only : allocate_txgraf,deallocate_txgraf, &
        &                 MODEG,MODEGL,NGYTM,NGYVM,NGR,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP, &
@@ -394,7 +396,7 @@ subroutine TXLOAD(IST)
   integer(4) :: mdlsolt_load
   real(8) :: dsolt_load, wsolt_load
   real(8), dimension(NSM) :: chisolt_load, rmusolt_load
-  integer(4) :: ietbheld_load
+  integer(4) :: ietbheld_load, mdlrcy_load
   real(8) :: fcoefetb_load
   logical :: LEX, etb_loaded
 
@@ -521,6 +523,12 @@ subroutine TXLOAD(IST)
                  if( istx == 0 .and. iextver >= 6 ) then
                     FcoefETB = fcoefetb_load ; ETBheld = ietbheld_load /= 0
                     etb_loaded = .true.
+                    read(io,iostat=istx) iextver, mdlrcy_load
+                    if( istx == 0 .and. iextver >= 7 ) then
+                       MDLRCY = mdlrcy_load
+                    else
+                       write(6,'(A,I2)') ' ## No record of MDLRCY in the file: kept at', MDLRCY
+                    end if
                  end if
               else
                  write(6,'(A,I2)') ' ## No record of the SOL transport connection in the file: MDLSOLT kept at', &

@@ -1333,7 +1333,8 @@ contains
        !     n_C0 = min( S_wall / (S_0 n_e), n_b ),
        !     S_wall = R_zz nu_L max(n_z - n_z_div, 0) + R_iz nu_L max(n_i - n_i_div, 0),
        !
-       !  with S_wall the same sputtering source LQnzCC carries.  n_C0 enters
+       !  with S_wall the sputtering source LQnzCC carries with MDLRCY = 1 (with
+       !  MDLRCY = 0 LQnzCC keeps the terms where they are negative).  n_C0 enters
        !  LQnzCC as a known field, through the extra C0 flux
        !  -(D_C0 - D_c) dn_C0/dV and the parallel loss of the charged part
        !  n_b - n_C0.  DC0z holds the unlimited D_C0; the Larsen limiter on it
