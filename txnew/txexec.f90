@@ -2337,6 +2337,7 @@ contains
     integer(4), intent(out) :: istat
     integer(4) :: NR, NQ, NRAVM, IDISP, IDIAGL
     real(8) :: EPSabs, AV, AVM, ERR1, FLOORm2, FLOORm3
+    logical :: notconv
     ! The increment of psi_t dot (LQm2) has a rounding floor that no iteration
     ! removes.  psi_t is mostly vacuum flux, so in Ampere's law (the LQm2 row)
     ! the rot B_phi term is a cancellation of terms larger than itself by a
@@ -2379,6 +2380,7 @@ contains
     if(MODECV == 0) then
 
        ASG = 0.d0
+       notconv = .false.
        L_NQ:do NQ = 1, NQMAX
           ! Calculate maximum local root-mean-square of X and corresponding grid point
           NRAVM = sum(maxloc(abs(XN(:,NQ))))-1
@@ -2436,6 +2438,7 @@ contains
                    istat = 1
                    return
                 end if
+                notconv = .true.   ! at IC = ICMAX
              end if
           end do L_NR
 
@@ -2443,14 +2446,15 @@ contains
        ! Converged or IC == ICMAX
        IASG(1:2) = maxloc(ASG)
 
+       ! istat is intent(out): the test of EPS < 0 reads the local flag, not the
+       ! value istat had in the caller (it read that before, and so depended on
+       ! the compiler)
        if(eps > 0.d0) then ! calculation continues even if not converged
           istat = 0
-       else ! calculation stops if not converged
-          if(istat == 1) then
-             istat = 2 ! not converged at IC = ICMAX
-          else
-             istat = 0 ! converged
-          end if
+       else if(notconv) then ! calculation stops if not converged
+          istat = 2 ! not converged at IC = ICMAX
+       else
+          istat = 0 ! converged
        end if
 !       if(EPS > 0.d0) EXIT L_IC
 
