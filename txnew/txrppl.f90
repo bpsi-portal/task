@@ -39,7 +39,15 @@ contains
 !!rp_conv         &                         ,PNbrpL, DERIV
 !!rp_conv    real(8), dimension(1:4,0:NRMAX) :: U
 
-    if( .not. allocated(DltRP_rim)) allocate(DltRP_rim(0:NRMAX),theta_rim(0:NRMAX))
+    if( allocated(DltRP_rim) ) then
+       ! NRMAX changed (a RUN or a LOAD with another NRMAX)
+       if( size(DltRP_rim) /= NRMAX + 1 ) deallocate(DltRP_rim,theta_rim)
+    end if
+    if( allocated(DltRP_rim) ) then
+       ! NRMAX changed (a RUN or a LOAD with another NRMAX)
+       if( size(DltRP_rim) /= NRMAX + 1 ) deallocate(DltRP_rim,theta_rim)
+    end if
+    if( .not. allocated(DltRP_rim) ) allocate(DltRP_rim(0:NRMAX),theta_rim(0:NRMAX))
 
     ! Ripple amplitude
     thetab = 0.5D0 * PI ! pitch angle of a typical banana particle
@@ -468,6 +476,10 @@ contains
     N = N_RPIN
 
     allocate(DERIV(1:N),U(1:4,1:N)) 
+    if( allocated(DltRP_rim) ) then
+       ! NRMAX changed (a RUN or a LOAD with another NRMAX)
+       if( size(DltRP_rim) /= NRMAX + 1 ) deallocate(DltRP_rim,theta_rim)
+    end if
     if( .not. allocated(DltRP_rim) ) allocate(DltRP_rim(0:NRMAX),theta_rim(0:NRMAX))
 
     !   *** Interpolation ***

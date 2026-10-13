@@ -490,6 +490,7 @@ contains
     integer(4), intent(in), optional :: icont_in
     integer(4) :: iflag, NS, NF
     integer(4), dimension(1:20) :: ierl
+    logical :: renew
 
     ier = 0   ! also when the arrays are already allocated and nothing is done
     ierl(:) = 0
@@ -503,9 +504,14 @@ contains
     NS    = NSM
     NF    = NFM
 
-    ! allocation check
+    ! allocation check: allocated arrays are kept, unless a restart asks for new
+    ! ones (icont_in /= 0) or NRMAX has changed since they were allocated (a LOAD
+    ! of a file with another NRMAX, which comes here without icont_in).  icont_in
+    ! is read only when present: Fortran does not stop at a false operand of .and.
     if(allocated(array_init_NR)) then
-       if(present(icont_in) .and. icont_in /= 0) then
+       renew = size(array_init_NR) /= NRMAX + 1
+       if(present(icont_in)) renew = renew .or. icont_in /= 0
+       if(renew) then
           call deallocate_txcomm
        else
           return

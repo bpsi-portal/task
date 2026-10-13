@@ -47,13 +47,16 @@ contains
     integer(4), intent(in), optional :: icont_in
     integer(4) :: N
     integer(4), dimension(1:3) :: ierl
+    logical :: renew
 
     ier = 0   ! also when the arrays are already allocated and nothing is done
     ierl(:) = 0
 
-    ! allocation check
+    ! allocation check (as in allocate_txcomm)
     if(allocated(GX)) then
-       if(present(icont_in) .and. icont_in /= 0) then
+       renew = size(GX) /= NRMAX + 1
+       if(present(icont_in)) renew = renew .or. icont_in /= 0
+       if(renew) then
           call deallocate_txgraf
        else
           return

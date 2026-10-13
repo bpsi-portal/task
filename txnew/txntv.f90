@@ -99,12 +99,17 @@ contains
   !***************************************************************
 
   subroutine Wnm_spline
+    use tx_commons, only : NRMAX
     use libspl1d, only : spl1d
     implicit none
     integer(4) :: ist, nmnq, ierr
     real(8), dimension(:), allocatable :: deriv
 
-    ! allocate variables if not allocated
+    ! allocate variables if not allocated, or again if NRMAX has changed (a RUN or
+    ! a LOAD with another NRMAX); the table is then read again below
+    if(allocated(Fmnq)) then
+       if(size(rNuNTV) /= NRMAX + 1) call dealloc_ntv
+    end if
     if(.not. allocated(Fmnq)) call alloc_ntv
 
     if(maxval(fmnq) == 0.D0) then
