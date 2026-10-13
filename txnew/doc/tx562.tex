@@ -3890,7 +3890,14 @@ either case.
   \texttt{MDLNCA} = 1 continues bit for bit as a run with 1 from the start).  With $-1$ a step that
   converges exactly at the sweep \texttt{ICMAX} counts as not converged, as before, and
   \texttt{NRETRY} takes it again; with 0--2 it is converged.  $-1$ leaves every run bit for bit as
-  it was; 2 is the strict setting for runs whose every step must converge.
+  it was; 2 is the strict setting for runs whose every step must converge.  Where every step converges
+  the setting does not matter: with standard NBI (\texttt{NRMAX} = 60 to 1\,s, 120 to 0.5\,s, 240 to
+  0.4\,s, $\Delta t = 10^{-4}$\,s, either sign of \texttt{EPS} and either \texttt{MODECV}) $-1$, 0 and 2
+  give the same results bit for bit, and no step converged exactly at the sweep \texttt{ICMAX}.  With
+  6.4\,MW of NBI and the offsets 0.1 (\texttt{NRMAX} = 60) 85 steps are accepted without convergence
+  (the slow neutrals at the wall, increments up to 254 \texttt{EPS}): 0 is bit for bit $-1$ there,
+  2 stops at 0.282\,s; with \texttt{EPS} $<0$, $-1$ accepts one substep more and stops one step later
+  than 0; with \texttt{MODECV} = 1, $-1$ stops at 0.282\,s and 0 runs to 0.7\,s.
 \item Convergence test of $\psid$ (\texttt{LQm3}) with a rounding-floor term, as for $\psitd$
   (Sec.~\ref{sec:lqm3tol}).  No input; a run in which no step reaches the floor is bit-identical.
 \item Known numerical limit, the axis \texttt{LQ*8}: with NBI the Picard map has a slowly contracting
@@ -4319,7 +4326,18 @@ either case.
   beam ions are in $X$; the NBI sources are formed again from these inputs at every step.  A beam is
   changed by giving the inputs after \texttt{LOAD} (switching it on converts $X_4$ as at any
   time).  \texttt{PNBHex} and the beam data read with \texttt{F} are not in the file and stay as
-  they are in the process.
+  they are in the process: a file of a run with them, loaded in a new process without \texttt{F},
+  continues without that beam and without a warning (its \texttt{PNBH} exceeds
+  \texttt{PNBHP} + \texttt{PNBHT1} + \texttt{PNBHT2} by \texttt{PNBHex}, which shows it), and a process
+  that has read them adds that beam to every file it loads.  With \texttt{F} given, before or after
+  \texttt{LOAD}, a new process continues bit for bit as the process that wrote the file
+  (2026-10-13, OFMC data of \texttt{F} 1; \texttt{F} 2 and 3 not tried).
+\item After \texttt{LOAD} a process with a beam power, also that of \texttt{F} (\texttt{PNBHex}), takes
+  $\psi$ to the beam form as at \texttt{F} and at any parameter input (2026-10-13).  \texttt{LOAD} sets
+  the form of the file, and with \texttt{F} before \texttt{LOAD} a file without a beam was continued in
+  the form without one until the next parameter input: the same solution as with \texttt{F} after
+  \texttt{LOAD}, with other rounding ($10^{-8}$).  Now the two orders agree bit for bit; without
+  \texttt{F} nothing changes.
 \end{itemize}
 
 \begin{thebibliography}{9}
