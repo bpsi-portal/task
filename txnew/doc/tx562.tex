@@ -3167,7 +3167,7 @@ empirical value $k_L=0.3$, a typical upstream Mach number of the SOL flow; with
 \texttt{MDLSOL} = 1 it does not give a stable SOL on the X-point test
 equilibrium.
 
-\subsection{Target recycling of the net SOL loss (\texttt{MDLRCY}, optional)}
+\subsection{Target recycling of the net SOL loss (\texttt{MDLRCY})}
 \label{sec:mdlrcy}
 
 The SOL term $-\nuL(n_s-\nsup{s})$ of a density equation is a loss $\nuL n_s$ along
@@ -3186,8 +3186,8 @@ $\nsup{s}$.  The target recycling into the neutrals takes the same difference,
 \begin{center}
 \begin{tabular}{|c|l|}\hline
 \texttt{MDLRCY} & target recycling \\\hline
-0 & the difference with its sign (default): a sink of neutrals where $n_s<\nsup{s}$ \\
-1 & the net loss only: $\nuL$ of each term is zero at the nodes where $n_s\le\nsup{s}$ \\\hline
+0 & the difference with its sign (default before 2026-10-13): a sink of neutrals where $n_s<\nsup{s}$ \\
+1 & the net loss only (default): $\nuL$ of each term is zero at the nodes where $n_s\le\nsup{s}$ \\\hline
 \end{tabular}
 \end{center}
 
@@ -3253,6 +3253,41 @@ net inflow from the SOL of $2.7\times10^{22}$\,s$^{-1}$ and 2--4.5 times the den
 The mask is a step in $n_s$ at $\nsup{s}$, taken at the nodes; within an element
 with one masked node the weak-form source of that node can be slightly negative.
 It has not slowed the Picard iteration in the runs above.
+
+Checks before the change of the default (2026-10-13; a diagnostic build that writes the
+nodal sources as the equations assemble them and the positivity check of every accepted
+step; first 50\,ms at \texttt{NRMAX} = 60, 120, 240 and $\Delta t = 10^{-4}$, $5\times10^{-5}$,
+$2.5\times10^{-5}$\,s, with and without NBI, and 3\,s at 60):
+\begin{itemize}
+\item The weak-form sources: with linear elements the source of a masked node $j$ in an
+  element with the unmasked node $k$ is $\gamma\nu_{\r{L}k}h(n_j+n_k-2\nsup{s})/12$, negative
+  when the element midpoint is below $\nsup{s}$.  For the bulk-ion terms ($\gamma_0$,
+  $\gamma_\r{i,z}$) this occurs only in the first 2\,ms, at $\rho = 1.01$--1.09: the negative
+  nodal sources sum to at most $5.5\times10^{-2}$ of the positive ones at \texttt{NRMAX} = 60
+  ($9\times10^{-2}$ at $\Delta t/4$), $1.5$--$1.9\times10^{-2}$ at 120 and
+  $3.5$--$6\times10^{-3}$ at 240 (as $h^2$), and to at most 0.8\% of the negative sources of 0.
+  The self-sputtering term ($\gamma_\r{0z}$) keeps a mask boundary in the outer SOL in the
+  steady state, $\rho = 1.01$--1.04: its negative nodal sources are at most 0.38\% of its positive
+  ones with NBI (in every step from 0.5\,s to 3\,s) and up to 1.2\% without NBI (intermittently; none
+  at 3\,s), and at most 0.7\% of the negative sources of 0 (0.33\% with NBI from 0.5\,s).  $\nnz$ and $n_{02}$ are
+  positive in every accepted step (the smallest $\nnz$ $2\times10^{-8}$; one intermediate sweep at
+  240 went to $-3\times10^{-8}$).
+\item The negative $n_{01}$ of the first 2\,ms ($-5\times10^{-11}$ at $\Delta t = 10^{-4}$\,s, growing
+  to $-1.8\times10^{-10}$ at $\Delta t/4$, the same on the three meshes) lies in the core,
+  $\rho = 0.64$--0.74, where the uniform initial $n_{01}$ is ionized away; it is unrelated to the
+  recycling.  The positivity check zeroes $n_{01}$ from the axis to there (the positive values it
+  removes are below $3\times10^{-16}$); the ionization of the removed part is at most
+  $6.5\times10^{-5}$ of the $n_{01}$ ionization in a step and $1.3$--$2.7\times10^{-6}$ of it over
+  the 2\,ms.  Without the check (diagnostic) the densities and temperatures differ by
+  $3$--$7\times10^{-6}$ at 0.05\,s and $1$--$2\times10^{-6}$ at 0.5\,s, below the time-step error
+  ($\Delta t$ against $\Delta t/2$: $1.2$--$1.4\times10^{-5}$ at 0.05\,s); with 0 the same comparison
+  gives $5$--$6\times10^{-5}$.  Zeroing only the negative nodes changes the densities and temperatures by less than
+  $2\times10^{-8}$ (the other variables by up to $2\times10^{-6}$, and $\psitd$ at its rounding floor
+  by $4.5\times10^{-5}$).
+  After 2\,ms only \texttt{NRMAX} = 60 has negative $n_{01}$, $\approx-10^{-14}$ at up to 14 nodes
+  inside $\rho = 0.67$.
+\end{itemize}
+
 For the impurity the difference is not only a start-up effect: in the steady state
 of the standard case $\nz$ is 1--3\% below $\nsup{z}$ in the outer SOL (the SOL is
 fed with carbon from upstream; net loss $-1.9\times10^{18}$\,s$^{-1}$), so with 1 the
@@ -3262,7 +3297,8 @@ With NBI the self-sputtering source is then $+2.9\times10^{17}$\,s$^{-1}$ from t
 instead of $-4\times10^{16}$\,s$^{-1}$, and the steady states differ in the impurity as given above.
 \texttt{MDLRCY} is kept in the save file (extension record 7); \texttt{LOAD} sets it
 from a file that has the record, so a value given before \texttt{LOAD} applies only
-to older files.  \texttt{W} and \texttt{O 7} print for the bulk ions and the impurity
+to older files: a file written before the record (before 2026-10-13) continues with the
+\texttt{MDLRCY} of the input, 1 unless it sets 0.  \texttt{W} and \texttt{O 7} print for the bulk ions and the impurity
 the loss, the supply and their difference, and the target recycling as the equations
 take it.
 
@@ -3679,7 +3715,8 @@ parameter & V5.52 & V5.60 & meaning \\\hline
 \texttt{MDLN0FL} & (0) & 0   & Larsen limiter on $D_{01}$ (2: element form; 1: legacy nodal form) \\
 \texttt{FLlim}   & --  & 0.25 & limiter factor $\alpha$ (C$^0$; $D_{01}$ with \texttt{MDLN0FL} = 1, 2) \\
 \texttt{RLXN0}   & --  & 0.5 & neutral-only relaxation (legacy \texttt{MDLN0FL} = 1 only) \\
-\texttt{NANDER}  & (0) & $-20$ & Anderson acceleration of the Picard sweeps \\\hline
+\texttt{NANDER}  & (0) & $-20$ & Anderson acceleration of the Picard sweeps \\
+\texttt{MDLRCY}  & (0) & 1 & target recycling of the net SOL loss only (Sec.~\ref{sec:mdlrcy}) \\\hline
 \end{tabular}
 \end{center}
 
@@ -3832,6 +3869,28 @@ either case.
   run gives the number and share of retaken steps and the finest substep, and warns when more
   than 10\% of the steps were retaken (a smaller base $\Delta t$ is then the right fix) or when
   steps did not converge even at $\Delta t/2^{\texttt{NRETRY}}$.
+\item \texttt{MDLNCA} (2026-10-13; default $-1$): what becomes of a (sub)step that has not converged in
+  \texttt{ICMAX} sweeps at the finest size \texttt{NRETRY} allows.  The sign of \texttt{EPS} gave both
+  the tolerance $|\texttt{EPS}|$ and this rule, and the rule was not applied alike:
+  \begin{center}
+  \begin{tabular}{|c|l|}\hline
+  \texttt{MDLNCA} & a (sub)step not converged at the finest size \\\hline
+  $-1$ & the original rule (default): accepted with \texttt{EPS} $>0$ and \texttt{MODECV} = 0; the run \\
+       & stopped with \texttt{EPS} $<0$, and with \texttt{MODECV} $\ne 0$ for either sign; a substep \\
+       & before the last one of a retried step accepted in every case \\
+  0 & by the sign of \texttt{EPS} alone, for every (sub)step and either \texttt{MODECV} \\
+  1 & accepted \\
+  2 & the run stopped: no (sub)step is accepted without convergence \\\hline
+  \end{tabular}
+  \end{center}
+  An accepted one is reported (``accepted at IC = ICMAX'', the step line marked ``*'', the number
+  at the end of the run); a stopped run ends on the last accepted step, the state at the start of
+  the step that failed, also when the failure is in a substep before the last (\texttt{SAVE} then
+  writes the state of the step before, bit for bit as a run stopped there, and a \texttt{CONT} with
+  \texttt{MDLNCA} = 1 continues bit for bit as a run with 1 from the start).  With $-1$ a step that
+  converges exactly at the sweep \texttt{ICMAX} counts as not converged, as before, and
+  \texttt{NRETRY} takes it again; with 0--2 it is converged.  $-1$ leaves every run bit for bit as
+  it was; 2 is the strict setting for runs whose every step must converge.
 \item Convergence test of $\psid$ (\texttt{LQm3}) with a rounding-floor term, as for $\psitd$
   (Sec.~\ref{sec:lqm3tol}).  No input; a run in which no step reaches the floor is bit-identical.
 \item Known numerical limit, the axis \texttt{LQ*8}: with NBI the Picard map has a slowly contracting
@@ -4025,6 +4084,27 @@ either case.
   0.1 is a test value that stabilized this case and has no physical justification, and fixed
   transport alongside CDBM is not a recommended standard setting.  \texttt{FSVAHL} = $-0.5$ instead
   of $-0.25$ also removes the depletion; the default is kept.
+
+  The failure depends on the mesh (2026-10-13; $\Delta t = 10^{-4}$\,s, \texttt{EPS} = $10^{-6}$, from
+  states of the continuous runs with $\Delta t$ down to $\Delta t/8$): with CDBM alone it comes at
+  0.38--0.39\,s with \texttt{NRMAX} = 120 and at 0.31--0.33\,s with 240 ($\Delta t/2$ to $\Delta t/8$),
+  always earlier on the finer mesh, and irregularly around 0.5\,s with 60; a smaller time step does not
+  remove it.  Before it the solutions converge with the mesh (at 0.25\,s the densities of 60 and 120
+  differ by $7\times10^{-3}$ of their RMS, those of 120 and 240 by $2\times10^{-3}$, largest in the
+  impurity on the axis), and the time-step and iteration errors are $2$--$3\times10^{-5}$ and
+  $3$--$6\times10^{-8}$.  The failure is therefore one of the discretized CDBM-alone problem near the
+  axis, not of the time integration; the CDBM coefficients vanish with the pressure gradient there,
+  and the problem may have no mesh-converged solution near the axis (a hypothesis, not shown).  The offsets
+  \texttt{PROFDB} = \texttt{PROFMB} = \texttt{PROFCB} = 0.1 or 0.05 carry the case to 0.7\,s at
+  \texttt{NRMAX} = 60 and 120 (0.05 against 0.1: densities $1.4$--$1.8\times10^{-2}$, pressures
+  $4\times10^{-2}$); at 240 the run stays positive, but the axis \texttt{LQ*8} mode (above) takes
+  over: steps are retried and some left unconverged from 0.37\,s with $\Delta t = 10^{-4}$ and
+  $5\times10^{-5}$\,s, and from 0.44\,s with $2.5\times10^{-5}$\,s.  In a
+  diagnostic build a floor of the coefficients inside $\rho = 0.1$ carried the case at 120 to 0.7\,s
+  with the value 0.2, not with 0.1, and twice the width did not help (one case each).  No physical value of an offset or a floor has been established (it would stand
+  for transport other than CDBM, which is not modelled), so the code keeps CDBM alone and its
+  defaults: CDBM alone is not a usable setting for 6.4\,MW of NBI on this case, and an offset, where
+  used, is a numerical choice to be stated with the results.
 \item Dirichlet conditions in the matrix.  \texttt{BOUNDARY} removes a variable fixed by a Dirichlet
   condition from the other rows: its coefficients there are set to zero, and a nonzero boundary
   value moves with them to the constant term.  The list of the terms concerned was kept from the
@@ -4205,12 +4285,41 @@ either case.
   cases, so after a converged step every later step was taken after one sweep, and with
   \texttt{EPS} $< 0$ a converged step went on to \texttt{ICMAX} and failed; it now converges in 7--19
   sweeps per step like the default test.  (The L2 test still stops a step at \texttt{ICMAX} whatever
-  the sign of \texttt{EPS}.)
-\item \texttt{MDLRCY} (2026-10-13; option, default 0): the target recycling of the SOL loss into the
-  neutrals only where it is a net loss (Sec.~\ref{sec:mdlrcy}).  With the default every run is
-  bit-identical, also through \texttt{SAVE} and \texttt{LOAD}; the switch is in extension record 7
-  of the save file.  \texttt{W} and \texttt{O 7} (\texttt{tx\_sources.dat}) print two more lines,
-  the loss and the supply of the bulk ions and of the impurity in the SOL.
+  the sign of \texttt{EPS} with the default \texttt{MDLNCA} = $-1$; 0 with \texttt{EPS} $>0$, or 1,
+  accepts it.)
+\item \texttt{MDLRCY} (2026-10-13): the target recycling of the SOL loss into the
+  neutrals only where it is a net loss (Sec.~\ref{sec:mdlrcy}); introduced as an option with the
+  default 0, the default is 1 since the checks given there.  An input that sets \texttt{MDLRCY} and a
+  file with extension record 7 are not affected; a file without the record continues with the value of
+  the input.  \texttt{parm/txparm.v552default} sets \texttt{MDLRCY} = 0.  \texttt{W} and \texttt{O 7}
+  (\texttt{tx\_sources.dat}) print two more lines, the loss and the supply of the bulk ions and of the
+  impurity in the SOL.
+\item Reports of a step not converged in \texttt{ICMAX} sweeps (2026-10-13; output only, the steps and
+  their results are unchanged).  A substep before the last one of a retried step that is accepted
+  without convergence is reported with any \texttt{EPS} and \texttt{MODECV} (with \texttt{EPS} $<0$ it
+  was accepted silently); a step that stops the run (\texttt{EPS} $<0$, or \texttt{MODECV} $\ne 0$) is
+  no longer reported first as accepted; a step that converged exactly at the sweep \texttt{ICMAX} is not
+  reported as unconverged, and when \texttt{NRETRY} takes it again the message says that it had
+  converged; the stop message and the sweep report give \texttt{IC} = \texttt{ICMAX}, not
+  \texttt{ICMAX} + 1.  The rule itself is set by \texttt{MDLNCA} (Sec.~\ref{sec:v552other}).
+\item \texttt{LOAD} of a file written without a beam into a process whose input had one.  $X$ holds
+  $\psi/\mu_\r{b2}$, with $\mu_\r{b1} = 1$, $\mu_\r{b2} = \mu_0$ once a beam has been given in the
+  process and $\mu_0$, 1 otherwise (a scaling of Amp\`ere's law for the convergence); the factors are not
+  in the file, and \texttt{LOAD} only switched to the beam form when the file had a beam density.  Such a
+  \texttt{LOAD} read $\psi$ as $\psi/\mu_0$ and the first step failed with a negative density on the
+  axis.  \texttt{LOAD} now takes the form from $\psi$ itself: the edge gradient of $X_4$ over the
+  boundary value of $\mathrm{d}\psi/\mathrm{d}V$ that the plasma current fixes is $1/\mu_\r{b2}$, 1.01 or
+  $8.0\times10^5$ in every file tried (\texttt{NRMAX} = 60--240, files of 2026-09 on), and the
+  threshold is $\mu_0^{-1/2}$.  The failing
+  case now continues bit for bit as the same file loaded with an input without a beam; every
+  \texttt{LOAD} that worked before is unchanged.  As before, \texttt{LOAD} takes every input stored in
+  the file: the beam powers, geometry and options (\texttt{PNBHP}, \texttt{PNBHT1}, \texttt{PNBHT2},
+  \texttt{RNB*}, \texttt{Ebmax}, \texttt{esps}, \texttt{PNBCD}, \texttt{PNBMPD}, \texttt{PNBPTC},
+  \texttt{MDBEAM}, \texttt{MDLNBD}, \texttt{MDBMCX}) replace those given before \texttt{LOAD}, and the
+  beam ions are in $X$; the NBI sources are formed again from these inputs at every step.  A beam is
+  changed by giving the inputs after \texttt{LOAD} (switching it on converts $X_4$ as at any
+  time).  \texttt{PNBHex} and the beam data read with \texttt{F} are not in the file and stay as
+  they are in the process.
 \end{itemize}
 
 \begin{thebibliography}{9}
