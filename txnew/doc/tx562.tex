@@ -2850,7 +2850,7 @@ on-axis ripple trapping rate from the interior & \texttt{FSRP} = 1 with NBI \\\h
 Runs without NBI are bit-identical to V5.60 (X-point and circular test
 equilibria, \texttt{NRMAX} = 60 and 240, \texttt{MDLNZD} = 0, \texttt{MDLN0FL} = 2,
 \texttt{FSRP} = 0 and 1).  No default switch changes.  For runs with NBI, and in
-particular with \texttt{FSRP} = 1, \texttt{NANDER} = $-20$ is recommended
+particular with \texttt{FSRP} = 1, \texttt{NANDER} = $-20$ (the default since 2026-10-13) is recommended
 (Sec.~\ref{sec:anderson}; $-50$ at \texttt{NRMAX} = 240): the impurity radial flux at the
 wall converges slowly without it once the beam heats the edge.
 
@@ -3397,7 +3397,8 @@ step is left to the relaxation alone: the linear model behind the mixing does no
 hold there, and with the mixing kept on the first steps from the initial profiles
 at \texttt{NRMAX} = 960 end in a negative density.  A fixed point of $G$ is
 a fixed point of the accelerated iteration, so the converged solution is that of
-plain Picard; \texttt{NANDER} = 0 (default) is bit-identical to the plain iteration.
+plain Picard; \texttt{NANDER} = 0 is bit-identical to the plain iteration.  The default
+is $-20$ (0 before 2026-10-13; see the change log at the end).
 
 With \texttt{NANDER} = $-20$ (100 steps from $t = 0.02$, $\Delta t = 10^{-4}$,
 \texttt{EPS} = $10^{-6}$, \texttt{ICMAX} = 100, X-point equilibrium) the average
@@ -3429,7 +3430,7 @@ the residual grows, or leaving \texttt{LQm1}--\texttt{LQm5} out of the correctio
 worse.  The mixing costs about 3\,ms per sweep at depth 40 (a sweep about 30\,ms).
 At \texttt{NRMAX} = 240 with NBI, \texttt{NANDER} = $-50$, the deepest accepted, is advised
 together with $\Delta t = 5\times10^{-5}$\,s and \texttt{NRETRY} = 1 (Sec.~\ref{sec:v552other});
-the default of \texttt{NANDER} stays 0.
+the default of \texttt{NANDER} is $-20$.
 The axis mode at \texttt{NRMAX} = 60 with 6.4\,MW (Sec.~\ref{sec:v552other}) does not
 depend on the depth.
 
@@ -3579,7 +3580,7 @@ parameter & V5.52 & V5.60 & meaning \\\hline
 \texttt{MDLN0FL} & (0) & 0   & Larsen limiter on $D_{01}$ (2: element form; 1: legacy nodal form) \\
 \texttt{FLlim}   & --  & 0.25 & limiter factor $\alpha$ (C$^0$; $D_{01}$ with \texttt{MDLN0FL} = 1, 2) \\
 \texttt{RLXN0}   & --  & 0.5 & neutral-only relaxation (legacy \texttt{MDLN0FL} = 1 only) \\
-\texttt{NANDER}  & (0) & 0   & Anderson acceleration of the Picard sweeps \\\hline
+\texttt{NANDER}  & (0) & $-20$ & Anderson acceleration of the Picard sweeps \\\hline
 \end{tabular}
 \end{center}
 
@@ -3757,7 +3758,7 @@ either case.
   floor of $\psid$ (Sec.~\ref{sec:lqm3tol}), which grows as $1/\Delta t$: at $10^{-5}$ s 11\% of
   the steps from 0.2 to 0.4 s were retried and 604 left unconverged at $\Delta t/2$, so a step
   that small does not help.  At \texttt{NRMAX} = 240 with NBI use $\Delta t = 5\times10^{-5}$ s,
-  \texttt{NRETRY} = 1 and \texttt{NANDER} = $-50$ (the default of \texttt{NANDER} stays 0): with the floor
+  \texttt{NRETRY} = 1 and \texttt{NANDER} = $-50$ (the default of \texttt{NANDER} is $-20$): with the floor
   of Sec.~\ref{sec:lqm3tol}, from 0.2 to 0.8 s 0.4\% of the steps are retried and 1 is left
   unconverged at $\Delta t/2$.  Without the floor the same settings retry
   4--5\% of the steps from 0.5 to 0.7 s (7 unconverged, on $\psid$); with \texttt{NANDER} = $-40$ and
@@ -4074,6 +4075,38 @@ either case.
   with its time, the substep, the largest increment and \texttt{EPS}, the step line is marked
   ``*'', and the run ends with their number.  Before, a step whose first substep had been accepted
   so and whose second converged looked converged.
+\item \texttt{NANDER} = $-20$ by default (2026-10-13; 0 before).  At the default \texttt{EPS} =
+  $10^{-5}$ plain Picard took 1.05--4.4 times the run time of $-20$ (\texttt{NRMAX} = 60, 1\,s, and 120,
+  0.3\,s; with and without NBI, CDBM and fixed transport), stopped at 0.08\,s at \texttt{NRMAX} = 120
+  with CDBM and NBI (at every \texttt{EPS} from $10^{-3}$ to $10^{-6}$), and left larger errors in
+  the densities and pressures against \texttt{EPS} = $10^{-6}$: 6 times with CDBM and NBI, 18 times
+  without NBI, $10^4$ times with fixed transport without NBI, about the same with fixed transport and
+  NBI.  In the harder cases it stops earlier than $-20$:
+  at the first step at \texttt{NRMAX} = 240 with NBI ($\Delta t = 10^{-4}$ and $5\times10^{-5}$\,s; $-20$
+  runs on, with the same retries and run time as $-50$ and solutions within $10^{-6}$ of it in the
+  densities and pressures at 0.2\,s), at 0.411\,s against 0.503\,s in the 6.4\,MW case at
+  \texttt{NRMAX} = 60, at the first step after a \texttt{LOAD} of that case at 0.5\,s ($-20$ goes on to
+  0.6\,s), at 0.036\,s against 0.348\,s with 6.4\,MW at 120, and at 0.452\,s against none up to
+  1.2\,s with \texttt{FSCBSH} = 2 at 60.
+  $-40$ takes as many sweeps as $-20$ and more time.  An input that sets \texttt{NANDER} is not
+  affected; \texttt{NANDER} is not in the save file, so a run continued from a file takes the
+  \texttt{NANDER} of its input.  \texttt{parm/txparm.v552default} sets \texttt{NANDER} = 0.
+\item \texttt{LOAD} of a file with another \texttt{NRMAX} in the same process.  The arrays were
+  kept when already allocated, so such a file (for example one of \texttt{NRMAX} = 120 after a run at
+  60) was read into arrays of the old size and the program stopped in the spline of the mesh.  They
+  are now allocated again when \texttt{NRMAX} differs from their size; the ripple and NTV arrays,
+  kept in the same way, likewise (with \texttt{FSRP} $\ne 0$ a \texttt{RUN} with another
+  \texttt{NRMAX} in the same process corrupted the heap).  Such a \texttt{LOAD} now gives the state of
+  a \texttt{LOAD} in a new process, bit for bit.
+\item The convergence test with \texttt{EPS} $< 0$.  The test read the status it returns before
+  setting it, so it depended on the compiler: with the optimized build a step that had converged took
+  one more sweep, and a step converging exactly at \texttt{ICMAX} could be reported as not
+  converged.  A run with \texttt{EPS} $< 0$ is now bit-identical to one with $|\texttt{EPS}|$ as long
+  as every step converges.  The L2 test (\texttt{MODECV} $\ne 0$) left the status unset in two
+  cases, so after a converged step every later step was taken after one sweep, and with
+  \texttt{EPS} $< 0$ a converged step went on to \texttt{ICMAX} and failed; it now converges in 7--19
+  sweeps per step like the default test.  (The L2 test still stops a step at \texttt{ICMAX} whatever
+  the sign of \texttt{EPS}.)
 \end{itemize}
 
 \begin{thebibliography}{9}
