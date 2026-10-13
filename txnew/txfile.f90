@@ -373,7 +373,8 @@ subroutine TXLOAD(IST)
        & ErV,PTsV_FIX,PNsV_FIX,ErV_FIX, &
        & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM,bdf_history_ready,stdin_ended, &
        & MDLNSUP, PNsSUPlast, RWALL, RWALLZ, RWALLIZ, FSTPTM, PROFD2C, PROFD2W, &
-       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT, FcoefETB, FrdcETB, ETBheld, MDLRCY
+       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT, FcoefETB, FrdcETB, ETBheld, MDLRCY, &
+       & LQm4, ckt, vv, Pi
   use tx_init, only : TXCALM
   use tx_graphic, only : allocate_txgraf,deallocate_txgraf, &
        &                 MODEG,MODEGL,NGYTM,NGYVM,NGR,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP, &
@@ -397,8 +398,8 @@ subroutine TXLOAD(IST)
   real(8) :: dsolt_load, wsolt_load
   real(8), dimension(NSM) :: chisolt_load, rmusolt_load
   integer(4) :: ietbheld_load, mdlrcy_load
-  real(8) :: fcoefetb_load
-  logical :: LEX, etb_loaded
+  real(8) :: fcoefetb_load, rmub2inv
+  logical :: LEX, etb_loaded, beam_form
 
   do 
      write(6,*) '# INPUT : LOAD FILE NAME'
@@ -585,10 +586,29 @@ subroutine TXLOAD(IST)
   ! Create the mesh and read an equilibrium
   call TXCALM
 
-!!  if(rMUb1 == rMU0 .and. (PNBHT1 /= 0.D0 .OR. PNBHT2 /= 0.D0 .OR. PNBHP /= 0.D0)) then
-  if(rMUb1 == rMU0 .and. (maxval(X(:,LQb1)) > epsilon(1.d0))) then
+  ! X(:,LQm4) is psi / rMUb2 in the form of the run that wrote the file: rMUb1 = 1,
+  ! rMUb2 = rMU0 once a beam was given in that process (TXMENU), rMU0 and 1 otherwise.
+  ! The form is not in the file, and the beam inputs of the file do not tell it (a beam
+  ! switched off later leaves it), so it is read from psi: the boundary condition of
+  ! Ampere's law, dpsi/dV = 2 pi rMU0 Ip / ckt at the wall, makes the edge gradient of
+  ! X(:,LQm4) over that value 1 / rMUb2, about 1 or 1 / rMU0.  The test before, on the
+  ! beam density alone, only switched to the beam form: a process whose input had a beam
+  ! took the psi of a file without one as psi / rMU0 and failed on its first step.
+  if(rIP /= 0.d0) then
+     rmub2inv = ckt(NRMAX) * (X(NRMAX,LQm4) - X(NRMAX-1,LQm4)) / (vv(NRMAX) - vv(NRMAX-1)) &
+          &   / (2.d0 * Pi * rMU0 * rIP * 1.d6)
+     beam_form = abs(rmub2inv) > 1.d0 / sqrt(rMU0)
+  else
+     beam_form = rMUb1 == 1.d0 .or. maxval(X(:,LQb1)) > epsilon(1.d0)
+  end if
+  if(beam_form) then
+     if(rMUb1 /= 1.d0) write(6,'(A)') ' ## psi of the file in the form with a beam: rMUb1 = 1, rMUb2 = rMU0'
      rMUb1 = 1.D0
      rMUb2 = rMU0
+  else
+     if(rMUb1 /= rMU0) write(6,'(A)') ' ## psi of the file in the form without a beam: rMUb1 = rMU0, rMUb2 = 1'
+     rMUb1 = rMU0
+     rMUb2 = 1.D0
   end if
 
   call TXCALV(X,0)
