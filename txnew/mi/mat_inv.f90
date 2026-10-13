@@ -1447,9 +1447,8 @@ contains
              xke22=xke22+yk2
           enddo
        else
-          ! arguments by value (expressions) so that no address of the loop's locals escapes
-          call potato_moments((i1),(ispc),(ivmax),(dx),vt,tem,ztau,(sqzfac(i1)),(xgt),(mxneo),fmneo,(gmneo), &
-               &              (c4pot),(cpo1),(potl),(zp43),(lflux),(eps2),pk11,pk12,pk22,fk11,fk12,fk22)
+          call potato_moments(i1,ispc,ivmax,dx,vt,tem,ztau,sqzfac(i1),xgt,mxneo,fmneo,gmneo, &
+               &              c4pot,cpo1,potl,zp43,lflux,eps2,pk11,pk12,pk22,fk11,fk12,fk22)
           xke11 = pk11
           xke12 = pk12
           xke22 = pk22
@@ -1813,9 +1812,13 @@ contains
 !   to the local diffusion law.  The weight w is the one without K.
 !=======================================================================
     use tx_commons, only : cnpi => Pi
-    integer(4), intent(in) :: i1, ispc, ivmax, mxneo
-    real(8), intent(in) :: dx, vt(:), tem(:), ztau(:,:), sqz, xgt, fmneo(10), gmneo, c4pot, cpo1, potl, zp43, eps2
-    logical, intent(in) :: lflux
+    ! The scalars are taken by value: with their addresses passed, the code that the compiler
+    ! makes for the velocity loop of nccoe changes, and with it the rounding of the results
+    ! also where this routine is not called (imodel_neo(4) = 0).
+    integer(4), intent(in), value :: i1, ispc, ivmax, mxneo
+    real(8), intent(in), value :: dx, sqz, xgt, gmneo, c4pot, cpo1, potl, zp43, eps2
+    logical, intent(in), value :: lflux
+    real(8), intent(in) :: vt(:), tem(:), ztau(:,:), fmneo(10)
     real(8), intent(out) :: xke11, xke12, xke22, fke11, fke12, fke22
     integer(4) :: iv, j2, mm
     real(8) :: x1, x2, x3, y, y2, p, pd, g, tb, nd, nt, kb, kps, k, u, u2, mui, kpo, kpp, hp, w, st, s, e0, e1, e2, &
