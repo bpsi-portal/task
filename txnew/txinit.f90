@@ -469,6 +469,20 @@ contains
     !              when more than 10% of the steps were retaken.
     NRETRY = 1
 
+    !     MDLNCA : a (sub)step whose Picard iteration has not converged in ICMAX sweeps,
+    !              after the retries of NRETRY:
+    !              -1: the original rule (default): with MODECV = 0 accepted for EPS > 0 and
+    !                  the run stopped for EPS < 0, with MODECV /= 0 stopped for either sign;
+    !                  a substep before the last one of a retried step accepted in every case
+    !               0: by the sign of EPS alone, for every (sub)step and either MODECV:
+    !                  accepted for EPS > 0, the run stopped for EPS < 0
+    !               1: accepted (|EPS| is the tolerance)
+    !               2: the run stopped: no (sub)step is accepted without convergence
+    !              An accepted one is reported (WARNING: ... accepted at IC = ICMAX).  A run
+    !              that stops ends on the last accepted step, the state at the start of the
+    !              step that failed, and SAVE writes that state.
+    MDLNCA = -1
+
     !   Parameter of heat loss to divertor (default = 1.0)
     FSLTs(1:NSM) = 1.d0
 
@@ -2230,7 +2244,7 @@ module tx_parameter_control
        & MODEG,MODEAV,MODEGL,MDLPCK,MODECV,oldmix,oldmixa,iaxproj,rhoaxproj,Dnfac, &
        & iSUPG3,iSUPG6,iSUPG8,SUPGstab,iprestab, &
        & MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDBSETA,MDITSN,MDITST,MDINTN,MDINTT,MDINTC,MDLETB, &
-       & MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,MDLRCY,NANDER,NRETRY, &
+       & MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,MDLRCY,NANDER,NRETRY,MDLNCA, &
        & iPoyntpol,iPoynttor,IDIAG,midbg,IGBDF,ISMTHD,MDLNBD,MDBMCX,imodel_neo, & ! 09/06/17~ miki_m
        & EpsHM, HPN  ! 10/08/06 miki_m
   private :: TXPLST
@@ -2465,6 +2479,8 @@ contains
           exit ; else ; idx = idx + 1 ; end if
        ! target recycling of the SOL parallel loss
        if(MDLRCY < 0 .or. MDLRCY > 1) then ; exit ; else ; idx = idx + 1 ; end if
+       ! a (sub)step not converged in ICMAX sweeps
+       if(MDLNCA < -1 .or. MDLNCA > 2) then ; exit ; else ; idx = idx + 1 ; end if
        if(MDLSOLT == 1) then
           if(any(FSPCL /= 1.d0)) write(6,'(A)') ' ## WARNING: FSPCL is not used with MDLSOLT = 1.'
           if(exp(- (rhob - 1.d0) / WSOLT) > 0.05d0) write(6,'(A,ES10.3,A,F5.1,A)') &
@@ -2510,7 +2526,7 @@ contains
          &       ' ',8X,'MODEG,MODEAV,MODEGL,MDLPCK,MODECV,oldmix,oldmixa,iaxproj,rhoaxproj,Dnfac,'/ &
          &       ' ',8X,'iSUPG3,iSUPG6,iSUPG8,SUPGstab,iprestab,'/ &
          &       ' ',8X,'MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDBSETA,MDITSN,MDITST,MDINTN,MDINTT,MDINTC,MDLETB,' / & 
-         &       ' ',8X,'MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,MDLRCY,NANDER,NRETRY,' / &
+         &       ' ',8X,'MDLNZD,MDLN0FL,FLlim,RLXN0,MDLSOL,MDLWBC,MDLNSUP,MDLRCY,NANDER,NRETRY,MDLNCA,' / &
          &       ' ',8X,'iPoyntpol,iPoynttor,IDIAG,midbg,IGBDF,ISMTHD,MDLNBD,MDBMCX,imodel_neo')
   end subroutine TXPLST
 
@@ -2641,7 +2657,7 @@ contains
          &   'irktrc     ', irktrc     , 'ipbtdir    ', ipbtdir    ,  &
          &   'ICMAX      ', ICMAX      , 'ICCALC     ', ICCALC     ,  &
          &   'NANDER     ', NANDER     , 'NRETRY     ', NRETRY     ,  &
-         &   'MODEG      ', MODEG      ,  &
+         &   'MDLNCA     ', MDLNCA     , 'MODEG      ', MODEG      ,  &
          &   'MODEAV     ', MODEAV     , 'MODEGL     ', MODEGL     ,  &
          &   'MDLPCK     ', MDLPCK     , 'MODECV     ', MODECV     ,  &
          &   'iaxproj    ', iaxproj    , &

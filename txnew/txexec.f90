@@ -103,7 +103,7 @@ contains
          &                 tiny_cap, EPS, IDIAG, NTSTEP, ICCALC, iaxproj, &
          &                 FSRP, MODEAV, XOLD, bdf_history_ready, bdf_history_dt, &
          &                 NT, DT, rIP, MDLPCK, ICONT, AVE_IC, MODECV, oldmix, oldmixa, Var, RLXN0, MDLN0FL, LQn1, LQn3, NC0CAP, &
-         &                 NANDER, NRETRY, FcoefETB, ETBheld
+         &                 NANDER, NRETRY, MDLNCA, FcoefETB, ETBheld
     use tx_variables
     use tx_coefficients, only : TXCALA
     use tx_graphic, only : TX_GRAPH_SAVE, TXSTGT, TXSTGV, TXSTGR, TXSTGQ, &
@@ -128,9 +128,11 @@ contains
     ! --- retry of a non-converged step as two half steps (NRETRY = 1) ---
     integer(4) :: nsub, isub, nretried, nsubmax, nretryfail
     logical :: stepfail
-    ! --- (sub)steps accepted at IC = ICMAX without convergence (EPS > 0) ---
+    ! --- (sub)steps accepted at IC = ICMAX without convergence ---
     integer(4) :: nnotconv
     logical :: stepnc
+    ! --- a (sub)step not converged at the finest DT that is not accepted (MDLNCA) ---
+    logical :: failnc
     integer(4), parameter :: NCWARN = 20
     ! NRETRY summary: a warning when more than RETRYWARN of the steps of a run needed a retry
     real(8), parameter :: RETRYWARN = 0.1d0
@@ -605,12 +607,30 @@ contains
           cycle L_SUB
        end if
        if(NRETRY > 0 .and. .not. swconv) stepfail = .true.   ! not converged at DT/2**NRETRY either
+       ! A (sub)step that has not converged at the finest DT stops the run (failnc) or is
+       ! accepted, by MDLNCA.  -1, the original rule: a substep before the last one of a
+       ! retried step is accepted with any EPS and MODECV, and the last substep, or the step,
+       ! stops the run when check_convergence says so (istat = 2: EPS < 0 with MODECV = 0,
+       ! either sign with MODECV /= 0).  0: accepted for EPS > 0, stopped for EPS < 0;
+       ! 1: accepted; 2: stopped, for every (sub)step and MODECV.
+       if(MDLNCA < 0) then
+          failnc = istat == 2 .and. .not. (nsub > 1 .and. isub < nsub)
+       else if(IC >= ICMAX) then
+          select case(MDLNCA)
+          case(0)
+             failnc = EPS < 0.d0
+          case(1)
+             failnc = .false.
+          case default
+             failnc = .true.
+          end select
+       else
+          failnc = .false.
+       end if
        ! A (sub)step accepted without convergence, reported for this (sub)step, since the step
        ! line and the sweep report below show the last substep only, which may have converged.
-       ! It is accepted at IC = ICMAX with EPS > 0 (MODECV = 0), and a substep before the last
-       ! one of a retried step is accepted with any EPS and MODECV: only the last substep stops
-       ! the run (istat = 2, below).  A step that converged at the sweep IC = ICMAX is not one.
-       if(.not. swconv .and. (istat /= 2 .or. (nsub > 1 .and. isub < nsub))) then
+       ! A step that converged at the sweep IC = ICMAX is not one.
+       if(.not. swconv .and. .not. failnc) then
           stepnc = .true. ; nnotconv = nnotconv + 1
           if(nnotconv <= NCWARN) then
              if(MODECV == 0) then
@@ -625,7 +645,7 @@ contains
              end if
           end if
        end if
-       if(nsub > 1 .and. isub < nsub) then   ! a substep is the start of the next one
+       if(nsub > 1 .and. isub < nsub .and. .not. failnc) then   ! a substep is the start of the next one
           if(IGBDF /= 0) then
              XOLD = X ; bdf_history_ready = .true. ; bdf_history_dt = DT
           end if
@@ -743,7 +763,7 @@ contains
        prof_io_sum = prof_io_sum + (prof_t1 - prof_t0)
 #endif
 
-       if(istat == 2) then
+       if(failnc) then   ! back to the start of the step (170)
           IERR = 1
           write(6,'(2(A,I6))') '### ERROR(TXLOOP) : Solutions not converged at ',  &
                &              NT, ' -', min(IC,ICMAX)
@@ -848,7 +868,8 @@ contains
        cycle L_NTDO
 
        ! The step failed: a singular matrix, a non-finite value or a negative density or
-       ! temperature (TXCHCK), or no convergence with EPS < 0.  Its iterate is not a
+       ! temperature (TXCHCK), or no convergence that is not accepted (MDLNCA; with the
+       ! default -1, EPS < 0 or MODECV /= 0).  Its iterate is not a
        ! result and is not stored, in X or in the graphs.  The run stops on the last
        ! accepted step, with the time, the plasma current, the step counts, the BDF
        ! history and the ETB factor of that step, so that SAVE writes that state and a
