@@ -133,6 +133,8 @@ contains
     logical :: stepnc
     ! --- a (sub)step not converged at the finest DT that is not accepted (MDLNCA) ---
     logical :: failnc
+    ! --- the (sub)step has not converged: IC >= ICMAX (MDLNCA = -1) or the test (>= 0) ---
+    logical :: nconv
     integer(4), parameter :: NCWARN = 20
     ! NRETRY summary: a warning when more than RETRYWARN of the steps of a run needed a retry
     real(8), parameter :: RETRYWARN = 0.1d0
@@ -573,7 +575,15 @@ contains
        ! Euler where the step itself had none; the others are BDF2 at the substep size.
        ! Afterwards the BDF2 history is X(t - DT) again, so the next step is an ordinary
        ! one.  Converged steps are not touched.
-       if(IC >= ICMAX .and. nsub < 2**NRETRY) then
+       ! Not converged: by the original rule (MDLNCA = -1), IC >= ICMAX, which also takes a
+       ! step that converged at the sweep IC = ICMAX, so that NRETRY retakes it; with
+       ! MDLNCA >= 0 the convergence test of the last sweep.
+       if(MDLNCA < 0) then
+          nconv = IC >= ICMAX
+       else
+          nconv = .not. swconv
+       end if
+       if(nconv .and. nsub < 2**NRETRY) then
           if(nsub == 1) then
              nretried = nretried + 1
              DTfull = DT ; Tstart = T_TX - DT ; Xstart = X
@@ -615,7 +625,7 @@ contains
        ! 1: accepted; 2: stopped, for every (sub)step and MODECV.
        if(MDLNCA < 0) then
           failnc = istat == 2 .and. .not. (nsub > 1 .and. isub < nsub)
-       else if(IC >= ICMAX) then
+       else if(nconv) then
           select case(MDLNCA)
           case(0)
              failnc = EPS < 0.d0

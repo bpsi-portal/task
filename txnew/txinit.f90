@@ -478,6 +478,8 @@ contains
     !                  accepted for EPS > 0, the run stopped for EPS < 0
     !               1: accepted (|EPS| is the tolerance)
     !               2: the run stopped: no (sub)step is accepted without convergence
+    !              With -1 a (sub)step that converged at the sweep IC = ICMAX counts as not
+    !              converged (NRETRY retakes it); with 0-2 it is converged.
     !              An accepted one is reported (WARNING: ... accepted at IC = ICMAX).  A run
     !              that stops ends on the last accepted step, the state at the start of the
     !              step that failed, and SAVE writes that state.
