@@ -2469,13 +2469,13 @@ contains
           end if
        end do L_NQ2
 
-       ! Converged
+       ! Converged.  istat is set on every path: a step that was not converged
+       ! before ICMAX left istat as the caller had it (0 after a converged step,
+       ! so the next step was taken after one sweep), and so did a converged step
+       ! with EPS < 0 (1, so the sweeps went on to ICMAX and the step failed).
        if(maxval(L2) < EPSabs) then
-!          if(EPS > 0.d0) EXIT L_IC
-          if(eps > 0.d0) then ! calculation continues even if not converged
-             istat = 0
-             return
-          end if
+          istat = 0
+          return
        end if
 
        if(IC /= ICMAX) then
@@ -2486,6 +2486,7 @@ contains
              write(6,'(2I4,ES17.8,ES10.2)') &
                   & IC,maxloc(L2)-1,maxval(L2),EPSabs
           end if
+          istat = 1
        else
           istat = 2
 !          EXIT L_IC ! This is used so that IC exceeds ICMAX after "END DO L_IC".
