@@ -30,6 +30,8 @@ After V5.62.00 (particle transport, wall, time stepping):
                                                       (now 1, orbit-averaged potato)
   EPS     = 1e-3  Picard convergence on the increment (now 1e-5)
   NANDER  = 0     plain Picard sweeps                 (now -20, Anderson acceleration)
+  MDLRCY  = 0     target recycling of the SOL loss with its sign
+                                                      (now 1, only where it is a net loss)
 
 Not restored by any input (implementation changes; the results differ slightly):
   - the constant term of the Tala momentum pinch is inward (V5.52: outward, a sign error
@@ -51,7 +53,9 @@ on psi_t dot near the wall; with its default EPS = 1e-3 it does not.
 RDltRPn = 2.4 (the former fixed value) is the V5.52 behaviour already.  NANDER is not stored in
 the save file, so NANDER = 0 has to stay in the txparm of a run continued from a file.
 The save file stores FSTPTM (with FSVAHL and PNsSUP) and imodel_neo, so a run continued from
-a file keeps its closures.
+a file keeps its closures.  It stores MDLRCY since 2026-10-13 (extension record 7): a file
+written before takes the MDLRCY of the input, so MDLRCY = 0 has to stay in the txparm of a run
+continued from such a file.
 
  &tx
   FSLP    = 0.3d0
@@ -73,4 +77,5 @@ a file keeps its closures.
   imodel_neo(4) = 0
   EPS     = 1.d-3
   NANDER  = 0
+  MDLRCY  = 0
  &end

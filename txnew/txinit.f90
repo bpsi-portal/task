@@ -355,9 +355,10 @@ contains
     MDLNSUP = 1
 
     !   Target recycling of the SOL parallel loss into the neutrals: 0 = rGamm0 nu_L
-    !   (n_i - PNsSUP(2)) and its impurity analogues of either sign (default), 1 = only
-    !   where the net loss is positive, n_s > PNsSUP(s) (see MDLRCY in txcomm.f90).
-    MDLRCY = 0
+    !   (n_i - PNsSUP(2)) and its impurity analogues of either sign, 1 = only where the
+    !   net loss is positive, n_s > PNsSUP(s) (default since 2026-10-13; 0 before; see
+    !   MDLRCY in txcomm.f90).
+    MDLRCY = 1
 
     !   Electron/Ion/Impurity temperature limit in SOL Upstream Plasma
     !   (Target minimum temperature in SOL)

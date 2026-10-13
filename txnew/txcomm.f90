@@ -143,12 +143,14 @@ module tx_commons
   !   MDLRCY : target recycling of the SOL parallel loss into the neutrals, the sources
   !            rGamm0 nu_L (n_i - n_SUP,i) of n01 and rGamm0zz nu_L (n_z - n_SUP,z)
   !            + rGamm0iz nu_L (n_i - n_SUP,i) of n0z.
-  !     0 : as written, also where n_s < n_SUP,s (default): there the SOL gains ions
-  !         from the upstream reservoir n_SUP,s, and the term removes neutrals.
+  !     0 : as written, also where n_s < n_SUP,s (the default before 2026-10-13): there
+  !         the SOL gains ions from the upstream reservoir n_SUP,s, and the term removes
+  !         neutrals.
   !     1 : nu_L of each term is set to 0 at the nodes where n_s <= n_SUP,s in the
   !         current iterate (n_i for rGamm0 and rGamm0iz, n_z for rGamm0zz): only a
-  !         net loss recycles.  The weak forms are those of 0, so where n_s > n_SUP,s
-  !         at every node the solution is that of 0 bit for bit.  Kept in the save file.
+  !         net loss recycles (default).  The weak forms are those of 0, so where
+  !         n_s > n_SUP,s at every node the solution is that of 0 bit for bit.  Kept in
+  !         the save file; a file without it takes the value of the input.
   integer(4) :: MDLRCY
   !   NANDER : Anderson acceleration of the Picard sweeps of each time step.
   !     0 : plain Picard (the default before 2026-10-13).
