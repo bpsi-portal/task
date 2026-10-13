@@ -137,6 +137,16 @@ contains
           NGR = -1
           ICONT = 1
           call TX_GRAPH_SAVE
+          ! TXLOAD sets psi in the form of the file.  The beam data read by F (OFMC, PNBHex) stay
+          ! in the process and are not in the file, so with them the form is taken to that of a
+          ! beam here, as at F and at any parameter input; else F before and after LOAD would
+          ! run in different forms (the same solution, other rounding).
+          if(rMUb1 == rMU0 .and. &
+               & (PNBHT1 /= 0.D0 .or. PNBHT2 /= 0.D0 .or. PNBHP /= 0.D0 .or. PNBHex /= 0.D0)) then
+             rMUb1 = 1.D0
+             rMUb2 = rMU0
+             X(0:NRMAX,LQm4) = X(0:NRMAX,LQm4) / rMUb2
+          end if
        case('G')
           call TXGOUT
        case('N')
