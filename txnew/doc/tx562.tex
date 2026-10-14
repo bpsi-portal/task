@@ -3737,7 +3737,9 @@ version changes only when an item changes its meaning.  The items are
 \item the state of the run: the ETB factor and whether it is held; the form of $\psi$
   (\texttt{RMUB1}: $X_4=\psi/\mu_0$ once a beam was given); the values of \texttt{TXGLOB} that
   the next step takes differences and time integrals against (\texttt{CPsi\_old},
-  \texttt{PoyntI(1:4)}, $dW/dt$, the previous-step values of the Poynting-flux terms);
+  \texttt{PoyntI(1:4)}, $dW/dt$, the previous-step values of the Poynting-flux terms); the
+  two-step BDF history (since 2026-10-14: \texttt{XOLD}, $X$ one step before the saved one, the
+  step it was taken with and whether it is there);
 \item the identification of the external data of the process, which the file does not carry:
   the NBI data read by \texttt{F} (kind 1--3, file, number of data and of lines,
   \texttt{PNBHex}, a hash of the values read) and whether ripple data were read (\texttt{F R}).
@@ -3748,14 +3750,27 @@ of $\psi$ (2026-10-13) is kept for files without it and as a check (a disagreeme
 reported).  With the history of \texttt{TXGLOB}, the loaded point keeps \texttt{PoyntI},
 \texttt{VPoynt(1)}, \texttt{CPsi} and $dW/dt$ of the run that wrote the file, and the next step
 goes on from them (before, they began again from zero at a \texttt{LOAD}, as they still do for
-a file without the history).  The two-step BDF history is not saved: the first step after
-\texttt{LOAD} is backward Euler, as before.  With \texttt{IGBDF} = 0, a \texttt{LOAD} in a new
-process continues bit for bit as the run that wrote the file, in $X$, \texttt{CPsi},
-\texttt{PoyntI}, \texttt{VPoynt} and every column of the time history (N60, NBI, 20 steps);
-with \texttt{IGBDF} = 1 $X$ differs by the backward-Euler restart (after 20 steps
-$2\times10^{-6}$ of their maxima in the densities and pressures, up to $6\times10^{-4}$ in a beam
-variable), and the global quantities with it.  The same holds without NBI.  $X$ itself is unchanged by the extension on
-every path tried.
+a file without the history).  With the two-step BDF history the first step after \texttt{LOAD} is
+the one the run that wrote the file would have taken, so that with \texttt{IGBDF} = 1, the
+default, as with 0 a \texttt{LOAD} continues bit for bit as that run, in $X$, \texttt{CPsi},
+\texttt{PoyntI}, \texttt{VPoynt}, every column of the time history and every item of the
+extension: in a new process and in the same one, with and without NBI (N60, 20 steps), with the
+NBI data of \texttt{F} (kind 1), after a change of \texttt{DT} at the \texttt{LOAD} (the
+variable-step weights with \texttt{DT} over the step of the history, or backward Euler beyond
+$1+\sqrt2$ times it, as in a run), and right after a step retaken by \texttt{NRETRY} (6.4\,MW, the
+offsets 0.1: the history is $X$ one full step before, as in the run, and the retries after the
+\texttt{LOAD} are those of the run).  The $\psi$ column of the history goes with that of $X$ when
+$\psi$ is taken to the form with a beam (\texttt{F} or a beam input after the \texttt{LOAD}, or
+between two \texttt{CONT}s, where the history kept the other unit before 2026-10-14).  A file
+without the history (written before 2026-10-14) restarts with a backward-Euler step, as before:
+after 20 steps $X$ differs from the continuous run by $2\times10^{-6}$ of their maxima in the
+densities and pressures and up to $6\times10^{-4}$ in a beam variable, and right after retried
+steps the restart can change the retries that follow (6.4\,MW: 2 instead of 3 in the next 30
+steps).  Where the run is near its limits the restart can decide its course: with 6.4\,MW and
+CDBM alone (\texttt{NRMAX} = 60, \texttt{EPS} = $10^{-6}$) the run from 0 goes on from 0.5 to
+0.65\,s (6 retries, 1 step accepted without convergence), and so does a \texttt{LOAD} of its file
+at 0.5\,s, bit for bit; restarted with backward Euler it stops at 0.524\,s on a negative temperature
+on the axis.  $X$ itself is unchanged by the extension on every path tried.
 
 \texttt{LOAD} compares the external data of the process with the identification in the file,
 and again at the first \texttt{CONT} after it when the \texttt{LOAD} reported a difference or
@@ -4445,6 +4460,16 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   identification of the external NBI and ripple data, which \texttt{LOAD} and the next
   \texttt{CONT} compare with the process.  Files of the base layout load as before; files with the
   extension records 1--7 load as ones of the base layout.
+\item The save file carries the two-step BDF history (2026-10-14; Section~\ref{sec:savefile}): with
+  \texttt{IGBDF} = 1 a \texttt{LOAD} continues bit for bit as the run that wrote the file; a file
+  without it restarts with backward Euler as before.  With it, the $\psi$ column of the history is
+  taken to the form with a beam together with that of $X$; in a run with \texttt{IGBDF} = 1 the first
+  step after \texttt{F} between two \texttt{CONT}s used the history in the other unit (with a 6.5\,MW
+  OFMC beam switched on at 5\,ms, $n$ was $2\times10^{-2}$ and $\psitd$ 44 times off after 20 steps).
+\item \texttt{F} (2026-10-14): the kind of the external data is set only once its data are read.
+  An answer whose file does not exist leaves the external data of the process as they were; before,
+  the kind changed over the old data or none, and the next \texttt{RUN} stopped (SIGSEGV) or its
+  first step failed.
 \end{itemize}
 
 \begin{thebibliography}{9}
