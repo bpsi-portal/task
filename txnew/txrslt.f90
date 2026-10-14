@@ -2,6 +2,12 @@ module tx_glob
   implicit none
   public
 
+  ! Values of the last call of TXGLOB that the next call takes differences and time
+  ! integrals against (Poynting flux, flux consumption CPsi).  Module variables (they
+  ! were save locals of TXGLOB) so that a save file can carry them (TXSAVE, TXLOAD).
+  real(8) :: T_TX_old, zIp_old, WJengy_old, WFEengy_old, WFMengy_old, &
+       &     WFMpengy_old, WFMtengy_old, VLOOP_old, PS2_old, zIpol_old, VLOOPpol_old
+
 contains
 !***********************************************************
 !
@@ -359,8 +365,6 @@ contains
       real(8), dimension(:), allocatable :: EngyEp, EngyEt, EngyMp, EngyMt, EngyJP, EngyJT
       real(8) :: WJengy, WFEpengy, WFEtengy, WFEengy, WFMpengy, WFMtengy, WFMengy, &
            &     jEpol, jEtor, zIp, zIpol, zvar, zvar_old
-      real(8), save :: T_TX_old, zIp_old, WJengy_old, WFEengy_old, WFMengy_old, &
-           &           WFMpengy_old, WFMtengy_old, VLOOP_old, PS2_old, zIpol_old, VLOOPpol_old
 
       ! *** Poynting flux and flux consumption ***
 
