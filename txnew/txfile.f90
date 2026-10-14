@@ -241,6 +241,200 @@ end module tx_savext
 
 !***************************************************************
 !
+!   Identification of the external data of a process
+!
+!***************************************************************
+! The NBI data read by F (ascii_input: 1 OFMC OrbitEffectDist.dat, 2 OFMC Torque.txt,
+! 3 an ASCII file) and the ripple data read by F R stay in the process: a save file does
+! not carry them, and a LOAD does not change them.  The extension of the save file
+! records what the run that wrote it had (the kind, the file, the number of data and of
+! lines, the total power and a hash of the values read), and a LOAD compares it with
+! what the process has, again at the first CONT after the LOAD (F may come in between).
+! A difference is reported only; nothing is added, removed or stopped.
+module tx_extid
+  use tx_commons, only : iflag_file, infiles, n_infiles, infile_name, IRPIN, nmax_file
+  implicit none
+  private
+  public :: extid, xid, extid_process, extid_loaded, extid_check, extid_clear
+  type extid
+     integer(4) :: kind = 0, ndata = 0, nol = 0, irpin = 0
+     real(8) :: totp = 0.d0
+     character(len=100) :: fname = ' '
+     character(len=16) :: hash = ' '
+  end type extid
+  type(extid) :: xid                 ! the items of the save file (savext_items)
+  type(extid) :: id_file, id_load    ! of the file loaded last, of the process at that LOAD
+  logical :: have_file = .false.     ! the file had the record
+  logical :: pending = .false.       ! a LOAD not yet followed by CONT or RUN
+  logical :: differed = .false.      ! the check at that LOAD reported a difference
+  real(8) :: pnbhex_file = 0.d0      ! PNBH - (PNBHP + PNBHT1 + PNBHT2) of the file [MW]
+
+contains
+
+  ! the external data of the process; the hash is over the values that ascii_input
+  ! sets for the kind (the others are not defined)
+  type(extid) function extid_process() result(id)
+    integer(4) :: i, j, n
+    integer(8) :: h
+    id%irpin = IRPIN
+    if(iflag_file < 1 .or. iflag_file > 3 .or. .not. allocated(infiles)) return
+    id%kind = iflag_file ; id%ndata = n_infiles ; id%fname = infile_name
+    id%nol = infiles(1)%nol
+    h = int(iflag_file, 8)
+    do i = 1, min(n_infiles, size(infiles))
+       n = min(max(infiles(i)%nol, 0), nmax_file)
+       h = mix(h, int(n, 8))
+       do j = 1, n
+          h = mix(h, transfer(infiles(i)%r(j), 0_8))
+          h = mix(h, transfer(infiles(i)%data(j), 0_8))
+       end do
+       select case(iflag_file)
+       case(1)
+          h = mix(h, transfer(infiles(i)%totS, 0_8))
+          h = mix(h, transfer(infiles(i)%totP, 0_8))
+       case(2)
+          h = mix(h, transfer(infiles(i)%totS, 0_8))
+       case(3)
+          h = mix(h, int(infiles(i)%ncol_mesh, 8))
+          h = mix(h, int(infiles(i)%ncol_data, 8))
+          do j = 1, len(infiles(i)%name)
+             h = mix(h, int(ichar(infiles(i)%name(j:j)), 8))
+          end do
+       end select
+    end do
+    if(iflag_file == 1 .and. n_infiles >= 2) id%totp = infiles(2)%totP * 1.d-6   ! PNBHex (txauxs)
+    write(id%hash,'(Z16.16)') h
+  end function extid_process
+
+  integer(8) function mix(h, v)
+    integer(8), intent(in) :: h, v
+    mix = ieor(ishftc(h, 7), v)
+  end function mix
+
+  ! at a LOAD, from the items of the file (xid) and its NBI powers
+  subroutine extid_loaded(have, pnbhex)
+    logical, intent(in) :: have
+    real(8), intent(in) :: pnbhex
+    have_file = have ; id_file = xid ; pnbhex_file = pnbhex
+    id_load = extid_process()
+    pending = .true. ; differed = .false.
+  end subroutine extid_loaded
+
+  ! after a RUN: no loaded state to check any more
+  subroutine extid_clear
+    pending = .false.
+  end subroutine extid_clear
+
+  ! when = 1 at a LOAD, 2 at the first CONT after it (checked again only if the LOAD
+  ! check reported a difference or the external data changed since, by F)
+  subroutine extid_check(when)
+    integer(4), intent(in) :: when
+    type(extid) :: p
+    character(len=8) :: at
+    if(.not. pending) return
+    p = extid_process()
+    if(when == 2) then
+       pending = .false.
+       if(.not. differed .and. same(p, id_load)) return
+    end if
+    at = merge('LOAD    ', 'CONT    ', when == 1)
+    differed = .false.
+    if(have_file) then
+       if(id_file%kind /= 0 .and. p%kind == 0) then
+          call warn(trim(at)//': the run that wrote the file had external NBI data ('//trim(desc(id_file)) &
+               & //'); this process has none, and the run goes on without them unless F reads them')
+       else if(id_file%kind == 0 .and. p%kind /= 0) then
+          call warn(trim(at)//': the run that wrote the file had no external NBI data; those of this process (' &
+               & //trim(desc(p))//') are added to the loaded run')
+       else if(p%kind /= 0 .and. .not. same_nbi(p, id_file)) then
+          call warn(trim(at)//': the external NBI data of this process ('//trim(desc(p)) &
+               & //') are not those of the run that wrote the file ('//trim(desc(id_file))//')')
+       else if(p%kind /= 0) then
+          write(6,'(A)') ' ## '//trim(at)//': the external NBI data of this process are those of the file (' &
+               & //trim(desc(p))//')'
+       end if
+       if(id_file%irpin /= p%irpin) then
+          if(id_file%irpin /= 0) then
+             call warn(trim(at)//': the run that wrote the file had ripple data (F R); this process has none')
+          else
+             call warn(trim(at)//': the run that wrote the file had no ripple data; those of this process (F R) are used')
+          end if
+       end if
+    else
+       ! a file without the record: the NBI power of the file beyond its inputs tells
+       ! whether its run had OFMC data (kind 1, the only kind with a power of its own)
+       if(pnbhex_file > 1.d-6 .and. p%kind == 0) then
+          call warn(trim(at)//': the file has an NBI power beyond PNBHP + PNBHT1 + PNBHT2 (' &
+               & //trim(fmt(pnbhex_file))//' MW), external NBI data (F) of its run, which this process does not have')
+       else if(pnbhex_file <= 1.d-6 .and. p%kind == 1) then
+          call warn(trim(at)//': the file has no NBI power beyond its inputs; the external NBI data of this process (' &
+               & //trim(desc(p))//') are added to the loaded run')
+       else if(p%kind == 1 .and. abs(p%totp - pnbhex_file) > 1.d-6 * max(1.d0, abs(pnbhex_file))) then
+          call warn(trim(at)//': the NBI power of the file beyond its inputs ('//trim(fmt(pnbhex_file)) &
+               & //' MW) is not that of the external NBI data of this process ('//trim(desc(p))//')')
+       else if(p%kind /= 0) then
+          write(6,'(A)') ' ## '//trim(at)//': external NBI data of this process ('//trim(desc(p)) &
+               & //'); the file does not record those of its run (its NBI power beyond the inputs agrees)'
+       end if
+    end if
+  end subroutine extid_check
+
+  subroutine warn(text)
+    character(len=*), intent(in) :: text
+    write(6,'(A)') ' ## WARNING: '//text
+    differed = .true.
+  end subroutine warn
+
+  logical function same(a, b)
+    type(extid), intent(in) :: a, b
+    same = same_nbi(a, b) .and. a%irpin == b%irpin
+  end function same
+
+  logical function same_nbi(a, b)
+    type(extid), intent(in) :: a, b
+    same_nbi = a%kind == b%kind .and. a%ndata == b%ndata .and. a%nol == b%nol .and. a%hash == b%hash &
+         &     .and. a%fname == b%fname
+  end function same_nbi
+
+  character(len=200) function desc(a)
+    type(extid), intent(in) :: a
+    character(len=*), parameter :: KINDS(3) = [character(len=24) :: 'OFMC OrbitEffectDist.dat', &
+         & 'OFMC Torque.txt', 'ASCII']
+    write(desc,'(A,I1,3A,I2,A,I3,A)') 'kind ', a%kind, ' ', trim(KINDS(max(1,min(3,a%kind)))), &
+         & ', file '//trim(a%fname)//',', a%ndata, ' data,', a%nol, ' lines'
+    if(a%kind == 1) desc = trim(desc)//', '//trim(fmt(a%totp))//' MW'
+    desc = trim(desc)//', hash '//a%hash
+  end function desc
+
+  character(len=12) function fmt(x)
+    real(8), intent(in) :: x
+    write(fmt,'(F12.4)') x
+    fmt = adjustl(fmt)
+  end function fmt
+
+end module tx_extid
+
+!***************************************************************
+!
+!   Check of the external data after a LOAD (TXMENU: CONT, RUN)
+!
+!***************************************************************
+! mode 2: at CONT (tx_extid, extid_check); 0: at RUN (the loaded state is gone)
+
+subroutine TXEXTCHK(mode)
+  use tx_extid, only : extid_check, extid_clear
+  implicit none
+  integer(4), intent(in) :: mode
+  if(mode == 0) then
+     call extid_clear
+  else
+     call extid_check(mode)
+  end if
+end subroutine TXEXTCHK
+
+
+!***************************************************************
+!
 !   The items of the extension of the save file (tx_savext)
 !
 !***************************************************************
@@ -257,6 +451,7 @@ subroutine savext_items
   use tx_glob, only : T_TX_old, zIp_old, zIpol_old, VLOOP_old, VLOOPpol_old, PS2_old, &
        & WFEengy_old, WFMengy_old, WJengy_old, WFMpengy_old, WFMtengy_old
   use tx_savext, only : xreg, xreg_ia, xreg_ra
+  use tx_extid, only : xid
   implicit none
 
   ! --- Inputs added after the base layout (the extension records 1-7 of BR-43 to BR-51) ---
@@ -300,6 +495,15 @@ subroutine savext_items
   call xreg('WJENGY_OLD', WJengy_old)
   call xreg('WFMPENGY_OLD', WFMpengy_old)
   call xreg('WFMTENGY_OLD', WFMtengy_old)
+  ! --- External data of the process at the saved time, not carried by the file (tx_extid):
+  !     NBI data read by F (kind: 0 none, 1-3 as ascii_input) and ripple data (F R) ---
+  call xreg('EXT_NBI_KIND', xid%kind)
+  call xreg('EXT_NBI_FILE', xid%fname)
+  call xreg('EXT_NBI_NDATA', xid%ndata)
+  call xreg('EXT_NBI_NOL', xid%nol)
+  call xreg('EXT_NBI_PNBHEX', xid%totp)
+  call xreg('EXT_NBI_HASH', xid%hash)
+  call xreg('EXT_RIPPLE', xid%irpin)
 
   ! --- Inputs of the namelist that the base layout missed (BR-52) ---
   ! used in the time evolution (Zeffin also by TXPARM_CHECK at a LOAD: PNsSUP(2:3) of MDLNSUP = 1)
@@ -585,6 +789,7 @@ subroutine TXSAVE
   use tx_graphic, only : NGYTM,NGYVM,MODEG,MODEGL,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP,GTY,GVY,GQY,GTX,GVX
   use tx_interface, only : TOUPPER
   use tx_savext, only : EXTSENT, EXTTAG, EXTVER, XM_COUNT, XM_WRITE, xmode, xio, xcount
+  use tx_extid, only : xid, extid_process
 
   implicit none
   integer(4) :: IST, NQ, NR, NC, I, IGYT, IGYV, io
@@ -675,6 +880,7 @@ subroutine TXSAVE
   write(io) (VPoynt(I), I=0, 3)
   write(io) (thrp(I), I=1, 2*NRMAX)
   ! The extension: header, the items of savext_items, end record (tx_savext)
+  xid = extid_process()
   xmode = XM_COUNT ; xcount = 0
   call savext_items
   write(io) EXTSENT, EXTTAG, EXTVER, xcount
@@ -726,6 +932,7 @@ subroutine TXLOAD(IST)
   use mod_eqneo, only : wrap_eqneo
   use mod_cross_section, only : spline_table_carbon_rate_coef_adas, spline_table_beam_rate_coef
   use tx_savext, only : EXTSENT, EXTTAG, EXTVER, XM_READ, xmode, xclear, xread_items, xhas, xreport
+  use tx_extid, only : extid, xid, extid_loaded, extid_check
   implicit none
   integer(4), intent(out) :: IST
   integer(4) :: NQ, NR, NC, I, IGYT, IGYV, io
@@ -865,10 +1072,12 @@ subroutine TXLOAD(IST)
      write(6,'(A)') ' ## WARNING: the records after the base layout of the file are not recognized; not read'
   end if
   rmub1_proc = rMUb1
+  xid = extid()
   xmode = XM_READ
   call savext_items
   xmode = 0
   call xreport
+  call extid_loaded(xhas('EXT_NBI_KIND'), PNBH - (PNBHP + PNBHT1 + PNBHT2))
   etb_loaded = xhas('FCOEFETB') .and. xhas('ETBHELD')
   glob_hist_loaded = all([(xhas(trim(HISTITEMS(i))), i = 1, size(HISTITEMS))])
   if( .not. etb_loaded ) then
@@ -972,6 +1181,9 @@ subroutine TXLOAD(IST)
   call TXWDAT2
 
   irestart = 0
+
+  ! The external data of the process against those of the run that wrote the file
+  call extid_check(1)
 
 end subroutine TXLOAD
 
@@ -1218,7 +1430,7 @@ end SUBROUTINE TXGLOD
 
 subroutine ascii_input
 
-  use tx_commons, only : infiles, nmax_file, n_infiles, iflag_file, datatype
+  use tx_commons, only : infiles, nmax_file, n_infiles, iflag_file, datatype, infile_name
   use tx_interface, only : KSPLIT_TX
   implicit none
   integer(4) :: IST, i, j, k, nrho, i_start, jshift, io
@@ -1692,6 +1904,7 @@ subroutine ascii_input
      end do
 
   end if
+  infile_name = TXFNAM
 
 end subroutine ascii_input
 

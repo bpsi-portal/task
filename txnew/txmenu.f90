@@ -24,7 +24,7 @@ contains
          &                 NGR, NGRM, GT, GY
     use tx_variables, only : TXCALV
     use tx_parameter_control, only : TXPARM_CHECK, TXPARM, TXVIEW
-    use tx_interface, only : TOUPPER, TXLOAD
+    use tx_interface, only : TOUPPER, TXLOAD, TXEXTCHK
     use tx_ripple, only : ripple_input, ripple_spl, deallocate_ripple
     use tx_ntv, only : dealloc_ntv
     use eqread_mod, only : alloc_equ
@@ -95,6 +95,7 @@ contains
           ETBheld = .false.
           IERR = 0
           ICONT = 1
+          call TXEXTCHK(0)
           call TXPROF
           call TX_GRAPH_SAVE
           if(IRPIN /= 0) call ripple_spl
@@ -105,6 +106,8 @@ contains
              write(6,*) 'XX RUN or LOAD before CONTINUE !'
              cycle
           end if
+          ! the external data (F) against those of the file loaded last, if F came after it
+          call TXEXTCHK(2)
           NGR=-1
           call TXSTGR(NGR,GT,GY,NGRM)
           if(IRPIN /= 0) call ripple_spl

@@ -493,6 +493,7 @@ module tx_commons
   integer(4) :: n_infiles = 0 ! number of data which are read from the file
   integer(4) :: iflag_file = 0 ! Flag indicating whether infiles is null or not.
                                ! Default "null"
+  character(len=100) :: infile_name = ' ' ! the file read last by F (ascii_input)
   character(len=6), dimension(1:5) :: datatype
   data datatype /'PNBP', 'PNBT1', 'PNBT2', 'PRF', 'LQe4'/
 

@@ -155,6 +155,12 @@ module tx_interface
   end interface
 
   interface
+     subroutine TXEXTCHK(mode)
+       integer(4), intent(in) :: mode
+     end subroutine TXEXTCHK
+  end interface
+
+  interface
      subroutine TXGLOD(IST)
        integer(4), intent(out) :: IST
      end subroutine TXGLOD
