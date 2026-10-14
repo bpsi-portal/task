@@ -3770,7 +3770,8 @@ steps).  Where the run is near its limits the restart can decide its course: wit
 CDBM alone (\texttt{NRMAX} = 60, \texttt{EPS} = $10^{-6}$) the run from 0 goes on from 0.5 to
 0.65\,s (6 retries, 1 step accepted without convergence), and so does a \texttt{LOAD} of its file
 at 0.5\,s, bit for bit; restarted with backward Euler it stops at 0.524\,s on a negative temperature
-on the axis.  $X$ itself is unchanged by the extension on every path tried.
+on the axis.  A history read from a file stays unused when \texttt{IGBDF} = 0 is set after the
+\texttt{LOAD}.  $X$ itself is unchanged by the extension on every path tried.
 
 \texttt{LOAD} compares the external data of the process with the identification in the file,
 and again at the first \texttt{CONT} after it when the \texttt{LOAD} reported a difference or
@@ -4001,7 +4002,7 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   2 stops at 0.282\,s; with \texttt{EPS} $<0$ (case (a)), $-1$ accepts one substep more and stops one
   step later than 0; with \texttt{MODECV} = 1 (case (b)), $-1$ stops at 0.282\,s and 0 runs to 0.7\,s
   (the same with the default 0 since 2026-10-14 and with $-1$ set, bit for bit as before).
-  Case (c) was not met in any run: where the axis mode below stalls many steps
+  Case (c) was not met in the following run: where the axis mode below stalls many steps
   (6.4\,MW, the offsets 0.1, \texttt{NRMAX} = 240, from the state at 0.4\,s to 0.475\,s,
   $\Delta t = 2.5\times10^{-5}$\,s, \texttt{EPS} = $10^{-6}$, \texttt{NRETRY} = 1; 3000 steps) 1150
   steps are retaken (every step at 0.442--0.462\,s, every other one after), and none had converged at the sweep
@@ -4010,7 +4011,11 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   accepted without convergence (25 at \texttt{LQz8} with increments of 1--2 \texttt{EPS} after
   0.471\,s, one at \texttt{LQe8} with 800 \texttt{EPS} at 0.441\,s).  $-1$ and 0 give the same
   results bit for bit at every saved time, and the same CPU time within the scatter of runs
-  sharing the machine (8840--8880\,s).
+  sharing the machine (8840--8880\,s).  Case (c) does occur in the same case from 0.46 to 0.475\,s
+  with $\Delta t/2$ (25 steps at 0.469\,s) or with \texttt{NRETRY} = 2 (20 substeps of $\Delta t/2$):
+  there 0 against $-1$ changes the densities and pressures by $7\times10^{-7}$ of their maxima
+  ($2\times10^{-4}$ in \texttt{LQm2}, \texttt{LQb8}), retakes 49 instead of 88 steps at $\Delta t/2$,
+  and takes 21--26\% less CPU time.
 \item Convergence test of $\psid$ (\texttt{LQm3}) with a rounding-floor term, as for $\psitd$
   (Sec.~\ref{sec:lqm3tol}).  No input; a run in which no step reaches the floor is bit-identical.
 \item Known numerical limit, the axis \texttt{LQ*8}: with NBI the Picard map has a slowly contracting
@@ -4046,7 +4051,23 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   $-40$).  The solutions at 0.4 s with
   $\Delta t = 10^{-4}$ to $10^{-5}$ s agree to about $10^{-5}$ of the profile RMS except $\psitd$ and
   $BV_1$, which carry their floors ($\le 3\times10^{-4}$).  With 6.4 MW and \texttt{FSTPTM} = 4 at \texttt{NRMAX} = 120 the impurity density on the
-  axis becomes negative at 0.86 s even with \texttt{NRETRY} = 1.  The continuum solution is regular.
+  axis became negative at 0.86 s with the inputs and defaults of 2026-09; with those of 2026-10-14
+  ($\Delta t = 10^{-4}$ s, \texttt{EPS} = $10^{-6}$) the run reaches 0.9\,s, retrying 0.07, 1.6 and 12\% of the
+  steps in 0--0.3, 0.3--0.6 and 0.6--0.9\,s and accepting 9 substeps without convergence: 4 at
+  \texttt{LQz8} on the axis (1--4 \texttt{EPS}) and 5 at \texttt{LQm2} next to the wall (50--1200
+  \texttt{EPS}).  The continuum solution is regular.
+  With 6.4 MW, the offsets 0.1 and \texttt{NRMAX} = 240 ($\Delta t = 2.5\times10^{-5}$ s,
+  \texttt{EPS} = $10^{-6}$, from the state at 0.44\,s) a step needs 105--136 sweeps: with
+  \texttt{ICMAX} = 100, 95\% of the steps from 0.44 to 0.46\,s were retaken, each after a failed step,
+  and 26 substeps were accepted without convergence from 0.46 to 0.475\,s; with \texttt{ICMAX} = 400
+  no step was retaken after the first 30 and none was accepted without convergence, at half the CPU
+  time from 0.44 to 0.46\,s (2700 against 5400\,s) and 10\% less from 0.46 to 0.475\,s.  The two runs
+  differ by $2.5\times10^{-5}$ of the maxima in the densities and $3.5\times10^{-5}$ in the pressures
+  (the retried run takes most steps as two of $\Delta t/2$), against $3.6\times10^{-3}$ between
+  \texttt{NRMAX} = 120 and 240 at 0.4\,s.  Where the steps need a few more sweeps than
+  \texttt{ICMAX}, a larger \texttt{ICMAX} (150--200) is cheaper than the retries.  \texttt{NRETRY} = 2
+  accepted none of the 26 from 0.46 to 0.475\,s (at 6\% more CPU time) but 2 of the 3 from 0.44 to
+  0.46\,s.
 \item Potato closure near the magnetic axis, \texttt{imodel\_neo(4)} (default 1 since 2026-10; this element of
   \texttt{imodel\_neo} was unused before).  The matrix inversion (\texttt{MDLNEO} = 2) takes the viscosity of each
   velocity as $k_\r{b}k_\r{ps}/(k_\r{b}+k_\r{ps})$ of its banana and Pfirsch--Schl\"uter values (the smaller one
