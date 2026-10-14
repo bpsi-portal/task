@@ -4064,7 +4064,11 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   time from 0.44 to 0.46\,s (2700 against 5400\,s) and 10\% less from 0.46 to 0.475\,s.  The two runs
   differ by $2.5\times10^{-5}$ of the maxima in the densities and $3.5\times10^{-5}$ in the pressures
   (the retried run takes most steps as two of $\Delta t/2$), against $3.6\times10^{-3}$ between
-  \texttt{NRMAX} = 120 and 240 at 0.4\,s.  Where the steps need a few more sweeps than
+  \texttt{NRMAX} = 120 and 240 at 0.4\,s.  These are differences of the step size: the runs with
+  \texttt{EPS} = $10^{-6}$ are within $10^{-7}$ of runs with $10^{-7}$ and \texttt{ICMAX} = 1000, whose
+  densities change by $2.7\times10^{-5}$ from $\Delta t$ to $\Delta t/2$ and by $1.6\times10^{-5}$ from
+  $\Delta t/2$ to $\Delta t/4$ (not yet the ratio 4 of second order), and the 26 substeps accepted
+  without convergence change them by less than $10^{-5}$.  Where the steps need a few more sweeps than
   \texttt{ICMAX}, a larger \texttt{ICMAX} (150--200) is cheaper than the retries.  \texttt{NRETRY} = 2
   accepted none of the 26 from 0.46 to 0.475\,s (at 6\% more CPU time) but 2 of the 3 from 0.44 to
   0.46\,s.
