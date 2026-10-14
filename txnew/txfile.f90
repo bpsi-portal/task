@@ -252,7 +252,10 @@ subroutine savext_items
        & Zeffin, FSCBAL, FSCBEL, RhoETB, PCHRLN, PCHSLP, PCHWID, RhoPch1, RhoPch2, Tqt0, Tqp0, &
        & RDltRPn, ICCALC, ieqread, ipbtdir, DMAG0, RMAGMN, RMAGMX, oldmixa, iaxproj, rhoaxproj, &
        & Dnfac, MDBSETA, MDLNZD, MDLN0FL, FLlim, RLXN0, MDLSOL, MDLWBC, NANDER, NRETRY, MDLNCA, &
-       & EpsHM, HPN, irktrc, DelRho, DelN, Q0, QA, MDITSN, MDITST, MDINTN, MDINTT, MDINTC, midbg
+       & EpsHM, HPN, irktrc, DelRho, DelN, Q0, QA, MDITSN, MDITST, MDINTN, MDINTT, MDINTC, midbg, &
+       & rMUb1, CPsi_old, PoyntI, WPDOT, WPPRE, TPRE
+  use tx_glob, only : T_TX_old, zIp_old, zIpol_old, VLOOP_old, VLOOPpol_old, PS2_old, &
+       & WFEengy_old, WFMengy_old, WJengy_old, WFMpengy_old, WFMtengy_old
   use tx_savext, only : xreg, xreg_ia, xreg_ra
   implicit none
 
@@ -274,6 +277,29 @@ subroutine savext_items
   ! --- State of the run: the ETB factor and whether it is held (MDLETB) ---
   call xreg('FCOEFETB', FcoefETB)
   call xreg('ETBHELD', ETBheld)
+  ! --- State of the run: the form of psi, X(:,LQm4) = psi / rMUb2 (rMUb1 = 1, rMUb2 = rMU0
+  !     once a beam was given in the process, else rMU0 and 1; TXMENU) ---
+  call xreg('RMUB1', rMUb1)
+  ! --- State of the run: the values of TXGLOB at the saved time that its next call takes
+  !     differences and time integrals against (the Poynting flux PoyntI, the flux
+  !     consumption CPsi, dW/dt); CPsi and VPoynt are in the base layout (TXLOAD: all
+  !     of HISTITEMS or none) ---
+  call xreg('CPSI_OLD', CPsi_old, 4)
+  call xreg('POYNTI', PoyntI, 4)
+  call xreg('WPDOT', WPDOT)
+  call xreg('WPPRE', WPPRE)
+  call xreg('TPRE', TPRE)
+  call xreg('T_TX_OLD', T_TX_old)
+  call xreg('ZIP_OLD', zIp_old)
+  call xreg('ZIPOL_OLD', zIpol_old)
+  call xreg('VLOOP_OLD', VLOOP_old)
+  call xreg('VLOOPPOL_OLD', VLOOPpol_old)
+  call xreg('PS2_OLD', PS2_old)
+  call xreg('WFEENGY_OLD', WFEengy_old)
+  call xreg('WFMENGY_OLD', WFMengy_old)
+  call xreg('WJENGY_OLD', WJengy_old)
+  call xreg('WFMPENGY_OLD', WFMpengy_old)
+  call xreg('WFMTENGY_OLD', WFMtengy_old)
 
   ! --- Inputs of the namelist that the base layout missed (BR-52) ---
   ! used in the time evolution (Zeffin also by TXPARM_CHECK at a LOAD: PNsSUP(2:3) of MDLNSUP = 1)
@@ -696,7 +722,7 @@ subroutine TXLOAD(IST)
   use tx_variables
   use tx_coefficients, only : TXCALA
   use tx_parameter_control, only : TXPARM_CHECK
-  use tx_glob, only : TXGLOB
+  use tx_glob, only : TXGLOB, glob_hist_loaded
   use mod_eqneo, only : wrap_eqneo
   use mod_cross_section, only : spline_table_carbon_rate_coef_adas, spline_table_beam_rate_coef
   use tx_savext, only : EXTSENT, EXTTAG, EXTVER, XM_READ, xmode, xclear, xread_items, xhas, xreport
@@ -706,8 +732,12 @@ subroutine TXLOAD(IST)
   character(len=100) ::  TXFNAM, RCSId
   character(len=8) :: LOADSLID, exttag_file
   integer(4) :: istx, iextver, ifirst, nitem, ipot_cur, ierr_file, ier_alloc
-  real(8) :: rmub2inv
-  logical :: LEX, etb_loaded, beam_form
+  real(8) :: rmub2inv, rmub1_proc
+  logical :: LEX, etb_loaded, beam_form, beam_form_est
+  ! the history of TXGLOB in the extension (savext_items): used only when all are there
+  character(len=12), parameter :: HISTITEMS(16) = [character(len=12) :: 'CPSI_OLD', 'POYNTI', &
+       & 'WPDOT', 'WPPRE', 'TPRE', 'T_TX_OLD', 'ZIP_OLD', 'ZIPOL_OLD', 'VLOOP_OLD', 'VLOOPPOL_OLD', &
+       & 'PS2_OLD', 'WFEENGY_OLD', 'WFMENGY_OLD', 'WJENGY_OLD', 'WFMPENGY_OLD', 'WFMTENGY_OLD']
 
   do 
      write(6,*) '# INPUT : LOAD FILE NAME'
@@ -834,11 +864,13 @@ subroutine TXLOAD(IST)
   else
      write(6,'(A)') ' ## WARNING: the records after the base layout of the file are not recognized; not read'
   end if
+  rmub1_proc = rMUb1
   xmode = XM_READ
   call savext_items
   xmode = 0
   call xreport
   etb_loaded = xhas('FCOEFETB') .and. xhas('ETBHELD')
+  glob_hist_loaded = all([(xhas(trim(HISTITEMS(i))), i = 1, size(HISTITEMS))])
   if( .not. etb_loaded ) then
      ! A file without the ETB factor: from the step count of the run that wrote it, as
      ! TXCALV forms it (held if that run reached its last step).  A
@@ -879,25 +911,33 @@ subroutine TXLOAD(IST)
 
   ! X(:,LQm4) is psi / rMUb2 in the form of the run that wrote the file: rMUb1 = 1,
   ! rMUb2 = rMU0 once a beam was given in that process (TXMENU), rMU0 and 1 otherwise.
-  ! The form is not in the file, and the beam inputs of the file do not tell it (a beam
-  ! switched off later leaves it), so it is read from psi: the boundary condition of
-  ! Ampere's law, dpsi/dV = 2 pi rMU0 Ip / ckt at the wall, makes the edge gradient of
-  ! X(:,LQm4) over that value 1 / rMUb2, about 1 or 1 / rMU0.  The test before, on the
-  ! beam density alone, only switched to the beam form: a process whose input had a beam
-  ! took the psi of a file without one as psi / rMU0 and failed on its first step.
+  ! The extension of the file records it (RMUB1).  For a file without the record it is
+  ! read from psi, as before: the boundary condition of Ampere's law,
+  ! dpsi/dV = 2 pi rMU0 Ip / ckt at the wall, makes the edge gradient of X(:,LQm4) over
+  ! that value 1 / rMUb2, about 1 or 1 / rMU0 (the beam inputs of the file do not tell
+  ! the form: a beam switched off later leaves it).  With the record this estimate is a
+  ! check, and a disagreement is reported.
   if(rIP /= 0.d0) then
      rmub2inv = ckt(NRMAX) * (X(NRMAX,LQm4) - X(NRMAX-1,LQm4)) / (vv(NRMAX) - vv(NRMAX-1)) &
           &   / (2.d0 * Pi * rMU0 * rIP * 1.d6)
-     beam_form = abs(rmub2inv) > 1.d0 / sqrt(rMU0)
+     beam_form_est = abs(rmub2inv) > 1.d0 / sqrt(rMU0)
   else
-     beam_form = rMUb1 == 1.d0 .or. maxval(X(:,LQb1)) > epsilon(1.d0)
+     beam_form_est = rmub1_proc == 1.d0 .or. maxval(X(:,LQb1)) > epsilon(1.d0)
+  end if
+  if(xhas('RMUB1')) then
+     beam_form = rMUb1 == 1.d0
+     if(beam_form .neqv. beam_form_est) write(6,'(A,L2,A)') &
+          & ' ## WARNING: the form of psi recorded in the file (with a beam:', beam_form, &
+          & ') is not the one its edge gradient gives; the record is used'
+  else
+     beam_form = beam_form_est
   end if
   if(beam_form) then
-     if(rMUb1 /= 1.d0) write(6,'(A)') ' ## psi of the file in the form with a beam: rMUb1 = 1, rMUb2 = rMU0'
+     if(rmub1_proc /= 1.d0) write(6,'(A)') ' ## psi of the file in the form with a beam: rMUb1 = 1, rMUb2 = rMU0'
      rMUb1 = 1.D0
      rMUb2 = rMU0
   else
-     if(rMUb1 /= rMU0) write(6,'(A)') ' ## psi of the file in the form without a beam: rMUb1 = rMU0, rMUb2 = 1'
+     if(rmub1_proc /= rMU0) write(6,'(A)') ' ## psi of the file in the form without a beam: rMUb1 = rMU0, rMUb2 = 1'
      rMUb1 = rMU0
      rMUb2 = 1.D0
   end if
@@ -916,8 +956,10 @@ subroutine TXLOAD(IST)
   call TXCALA
 
   ! TAUE2, PoyntI and VPoynt of the LOAD point follow the first-point rule of TXGLOB
-  ! (irestart = 1): no previous step.  (TAUE2 was set here from GTY(NGT,34), which is
-  ! WST(2), and TXGLOB overwrote it.)
+  ! (irestart = 1): no previous step; with the history of the extension (glob_hist_loaded)
+  ! they, CPsi and the values the next step takes differences against are those of the
+  ! run at the saved time.  (TAUE2 was set here from GTY(NGT,34), which is WST(2), and
+  ! TXGLOB overwrote it.)
 
   ! Reset start point of graphics
   NGT=-1
@@ -925,6 +967,7 @@ subroutine TXLOAD(IST)
   NGVV=-1
 
   call TXGLOB
+  glob_hist_loaded = .false.
   call TXWDAT
   call TXWDAT2
 

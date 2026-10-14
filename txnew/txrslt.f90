@@ -7,6 +7,10 @@ module tx_glob
   ! were save locals of TXGLOB) so that a save file can carry them (TXSAVE, TXLOAD).
   real(8) :: T_TX_old, zIp_old, WJengy_old, WFEengy_old, WFMengy_old, &
        &     WFMpengy_old, WFMtengy_old, VLOOP_old, PS2_old, zIpol_old, VLOOPpol_old
+  ! Set by TXLOAD for its call of TXGLOB when the file carries these values, CPsi_old,
+  ! PoyntI, WPDOT, WPPRE and TPRE of the run at the saved time (extension of the save
+  ! file): the differences and time integrals then go on from them as in that run.
+  logical :: glob_hist_loaded = .false.
 
 contains
 !***********************************************************
@@ -186,14 +190,19 @@ contains
     !    SOUT = SLST
 
     ! The first point of a RUN (T_TX = TPRE = 0) or after a LOAD (irestart = 1) has no
-    ! previous step: dW/dt is zero there, so that TAUE2 = TAUE1.
-    if(irestart == 1 .or. abs(T_TX - TPRE) <= epsilon(1.d0)) then
-       WPDOT = 0.d0
+    ! previous step: dW/dt is zero there, so that TAUE2 = TAUE1.  A LOAD of a file with
+    ! the history keeps WPDOT, WPPRE and TPRE of the run that wrote it.
+    if(irestart == 1 .and. glob_hist_loaded) then
+       continue
     else
-       WPDOT = (WPT - WPPRE)/(T_TX - TPRE)
+       if(irestart == 1 .or. abs(T_TX - TPRE) <= epsilon(1.d0)) then
+          WPDOT = 0.d0
+       else
+          WPDOT = (WPT - WPPRE)/(T_TX - TPRE)
+       end if
+       WPPRE = WPT
+       TPRE  = T_TX
     end if
-    WPPRE = WPT
-    TPRE  = T_TX
 
     if(PINT <= 0.d0) then
        TAUE1 = 0.d0
@@ -481,6 +490,17 @@ contains
               &   * (T_TX - T_TX_old)
 
          CPsi_old(:) = CPsi(:)
+      else if( irestart == 1 .and. glob_hist_loaded ) then
+         ! A LOAD of a file with the history: PoyntI, VPoynt(1), CPsi, CPsi_old and the
+         ! _old set are those of the run at the saved time (TXLOAD), so that the next
+         ! step goes on from them; the instantaneous quantities as at any step.
+         VPoynt(0) = VLOOP
+         if( iPoyntpol == 1 .and. iPoynttor == 0 ) then
+            VPoynt(2) = WJengy / zIpol
+         else
+            VPoynt(2) = WJengy / zIp
+         end if
+         VPoynt(3) = VLOOPpol * (zIpol / zIp)
       else
          ! The first point of a RUN (T_TX = 0) or right after a LOAD (irestart = 1) has no
          ! previous step.  The quantities that are differences over the step (PoyntI,
@@ -500,17 +520,19 @@ contains
          end if
          VPoynt(3) = VLOOPpol * (zIpol / zIp)
       end if
-      T_TX_old     = T_TX
-      zIp_old      = zIp
-      VLOOP_old    = VLOOP
-      zIpol_old    = zIpol
-      VLOOPpol_old = VLOOPpol
-      PS2_old      = PoyntS(2)
-      WFEengy_old  = WFEengy
-      WFMengy_old  = WFMengy
-      WJengy_old   = WJengy
-      WFMpengy_old = WFMpengy
-      WFMtengy_old = WFMtengy
+      if( .not. (irestart == 1 .and. glob_hist_loaded) ) then
+         T_TX_old     = T_TX
+         zIp_old      = zIp
+         VLOOP_old    = VLOOP
+         zIpol_old    = zIpol
+         VLOOPpol_old = VLOOPpol
+         PS2_old      = PoyntS(2)
+         WFEengy_old  = WFEengy
+         WFMengy_old  = WFMengy
+         WJengy_old   = WJengy
+         WFMpengy_old = WFMpengy
+         WFMtengy_old = WFMtengy
+      end if
 
       !   --- Ejima coefficient ---
 
