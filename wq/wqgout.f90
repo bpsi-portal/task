@@ -66,7 +66,9 @@ CONTAINS
     END DO
 
     CALL PAGES
-    WRITE(6,'(A,I8,2ES12.4)') 'ngt_max,t,EX:',ngt_max,t_ngt(1),EX_max_ngt(1)
+    WRITE(6,'(A,I8,4ES12.4)') 'ngt_max,t,E:', &
+         ngt_max,t_ngt(ngt_max), &
+         EX_max_ngt(ngt_max),EY_max_ngt(ngt_max),EZ_max_ngt(ngt_max)
     CALL grd1d(1,tn,EX_max_ngt,ngt_m,ngt_max,1,'@Ex_max vs tn@',FMIN=0.D0)
     CALL grd1d(2,tn,EY_max_ngt,ngt_m,ngt_max,1,'@Ey_max vs tn@',FMIN=0.D0)
     CALL grd1d(3,tn,EZ_max_ngt,ngt_m,ngt_max,1,'@Ez_max vs tn@',FMIN=0.D0)
@@ -98,9 +100,9 @@ CONTAINS
           fa(nx,ny)=ABS(EX(nx,ny))
        END DO
     END DO
-    CALL grd2d(5,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Real Ex@',ASPECT=0.D0)
-    CALL grd2d(6,xn_nx,yn_ny,fi,nxmax,nxmax,nymax,'@Imag Ex@',ASPECT=0.D0)
-    CALL grd2d(7,xn_nx,yn_ny,fa,nxmax,nxmax,nymax,'@Abs  Ex@',ASPECT=0.D0)
+    CALL grd2d_wq(5,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Real Ex@',ASPECT=0.D0)
+    CALL grd2d_wq(6,xn_nx,yn_ny,fi,nxmax,nxmax,nymax,'@Imag Ex@',ASPECT=0.D0)
+    CALL grd2d_wq(7,xn_nx,yn_ny,fa,nxmax,nxmax,nymax,'@Abs  Ex@',ASPECT=0.D0)
     
     DO ny=1,nymax
        DO nx=1,nxmax
@@ -109,9 +111,9 @@ CONTAINS
           fa(nx,ny)=ABS(EY(nx,ny))
        END DO
     END DO
-    CALL grd2d( 8,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Real Ey@',ASPECT=0.D0)
-    CALL grd2d( 9,xn_nx,yn_ny,fi,nxmax,nxmax,nymax,'@Imag Ey@',ASPECT=0.D0)
-    CALL grd2d(10,xn_nx,yn_ny,fa,nxmax,nxmax,nymax,'@Abs  Ey@',ASPECT=0.D0)
+    CALL grd2d_wq( 8,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Real Ey@',ASPECT=0.D0)
+    CALL grd2d_wq( 9,xn_nx,yn_ny,fi,nxmax,nxmax,nymax,'@Imag Ey@',ASPECT=0.D0)
+    CALL grd2d_wq(10,xn_nx,yn_ny,fa,nxmax,nxmax,nymax,'@Abs  Ey@',ASPECT=0.D0)
     
     DO ny=1,nymax
        DO nx=1,nxmax
@@ -120,9 +122,9 @@ CONTAINS
           fa(nx,ny)=ABS(EZ(nx,ny))
        END DO
     END DO
-    CALL grd2d(11,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Real Ez@',ASPECT=0.D0)
-    CALL grd2d(12,xn_nx,yn_ny,fi,nxmax,nxmax,nymax,'@Imag Ez@',ASPECT=0.D0)
-    CALL grd2d(13,xn_nx,yn_ny,fa,nxmax,nxmax,nymax,'@Abs  Ez@',ASPECT=0.D0)
+    CALL grd2d_wq(11,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Real Ez@',ASPECT=0.D0)
+    CALL grd2d_wq(12,xn_nx,yn_ny,fi,nxmax,nxmax,nymax,'@Imag Ez@',ASPECT=0.D0)
+    CALL grd2d_wq(13,xn_nx,yn_ny,fa,nxmax,nxmax,nymax,'@Abs  Ez@',ASPECT=0.D0)
 
     CALL PAGEE
 
@@ -136,7 +138,7 @@ CONTAINS
           fr(nx,ny)=REAL(pabs(nx,ny))
        END DO
     END DO
-    CALL grd2d(5,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Pabs@',ASPECT=0.D0)
+    CALL grd2d_wq(5,xn_nx,yn_ny,fr,nxmax,nxmax,nymax,'@Pabs@',ASPECT=0.D0)
 
     CALL PAGEE
     RETURN
@@ -240,7 +242,7 @@ CONTAINS
              END DO ! nx
           END DO !ny
 
-          CALL grd2d(ng-1+ng_id,xn_nx,yn_ny,f,nxmax,nxmax,nymax, &
+          CALL grd2d_wq(ng-1+ng_id,xn_nx,yn_ny,f,nxmax,nxmax,nymax, &
                title//title_t,ASPECT=0.D0,LINE_THICKNESS=line_thickness)
        END DO
        CALL PAGEE
@@ -250,4 +252,83 @@ CONTAINS
 9000 CONTINUE
     RETURN
   END SUBROUTINE wq_gsub_time
+
+  SUBROUTINE grd2d_wq(ngp,fx,fy,ff,nxm,nxmax,nymax,title,aspect,line_thickness)
+
+    USE wqcomm_parm
+    USE libgrf
+    IMPLICIT NONE
+
+    INTEGER,INTENT(IN):: NGP                       ! Graph size and postion ID
+    INTEGER,INTENT(IN):: NXM,NXMAX,NYMAX           ! Number of data  
+    REAL(dp),INTENT(IN):: FX(NXMAX),FY(NYMAX)       ! 1D data
+    REAL(dp),INTENT(IN):: FF(NXM,NYMAX)             ! 1D data
+    REAL(dp),INTENT(IN),OPTIONAL:: ASPECT
+    REAL(dp),INTENT(IN),OPTIONAL:: LINE_THICKNESS(1)
+    CHARACTER(LEN=*),INTENT(IN),OPTIONAL:: TITLE
+
+    TYPE(grf_attr_type):: A
+
+    INTEGER:: NX,NY
+    REAL,DIMENSION(:),ALLOCATABLE:: GX,GY
+    REAL,DIMENSION(:,:),ALLOCATABLE:: GF
+    INTEGER:: medium
+    REAL:: x1,x2,y1,y2
+
+    INTERFACE
+       SUBROUTINE SETLNW(VALUE)
+         REAL,INTENT(IN):: VALUE
+       END SUBROUTINE SETLNW
+       SUBROUTINE SETRGB(R,G,B)
+         REAL,INTENT(IN):: R,G,B
+       END SUBROUTINE SETRGB
+       FUNCTION GUCLIP(VALUE)
+         USE task_kinds,ONLY: dp
+         REAL(dp),INTENT(IN):: VALUE
+         REAL:: GUCLIP
+       END FUNCTION GUCLIP
+    END INTERFACE
+ 
+    ALLOCATE(GX(NXMAX),GY(NYMAX),GF(NXM,NYMAX))
+    A%MODE_2D=1
+
+    DO NX=1,NXMAX
+       GX(NX)=GUCLIP(FX(NX))
+    ENDDO
+    DO NY=1,NYMAX
+       GY(NY)=GUCLIP(FY(NY))
+    END DO
+    DO NY=1,NYMAX
+       DO NX=1,NXMAX
+          GF(NX,NY)=GUCLIP(FF(NX,NY))
+       ENDDO
+    ENDDO
+
+    CALL GRD_CONVERT(NGP,GX,GY,GF,NXM,NXMAX,NYMAX, &
+         TITLE=TITLE,ASPECT=ASPECT,LINE_THICkNESS=LINE_THICKNESS, &
+         A=A)
+
+    CALL GDEFIN(A%GPXMIN,A%GPXMAX,A%GPYMIN,A%GPYMAX, &
+                A%XMIN,A%XMAX,A%YMIN,A%YMAX)
+    CALL SETCLP(A%GPXMIN,A%GPXMAX,A%GPYMIN,A%GPYMAX)
+
+    CALL SETRGB(0.0,1.0,0.0)
+    CALL SETLNW(A%FRAME_THICKNESS)
+    
+    DO medium=1,medium_max
+       x1=xnmin_medium(medium)
+       x2=xnmax_medium(medium)
+       y1=ynmin_medium(medium)
+       y2=ynmax_medium(medium)
+       CALL MOVE2D(x1,y1)
+       CALL DRAW2D(x2,y1)
+       CALL DRAW2D(x2,y2)
+       CALL DRAW2D(x1,y2)
+       CALL DRAW2D(x1,y1)
+    END DO
+    
+    CALL grd2d(ngp,fx,fy,ff,nxm,nxmax,nymax, &
+               TITLE=title,ASPECT=aspect,LINE_THICKNESS=line_thickness)
+
+  END SUBROUTINE grd2d_wq
 END MODULE wqgout

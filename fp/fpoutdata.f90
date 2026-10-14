@@ -214,10 +214,8 @@
          IF(FNS(NTH_F1,NP,NR_F1,NSA_F1).le.beam_peak_value &
               .and.FNS(NTH_F1,NP+1,NR_F1,NSA_F1).ge.beam_peak_value)THEN
             NP_half_l=NP
-         ELSEIF(FNS(NTH_F1,NP,NR_F1,NSA_F1) &
-              .ge.beam_peak_value &
-              .and.FNS(NTH_F1,NP+1,NR_F1,NSA_F1) &
-              .le.beam_peak_value)THEN
+         ELSEIF(FNS(NTH_F1,NP,NR_F1,NSA_F1).ge.beam_peak_value.and. &
+                FNS(NTH_F1,NP+1,NR_F1,NSA_F1).le.beam_peak_value)THEN
             NP_half_h=NP
          END IF
       END DO

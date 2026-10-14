@@ -61,7 +61,7 @@ CONTAINS
     NXDMIN=-NXDMAX
     NXWMAX=NXDMAX-NXDMIN+1
     IF(NZMAX.EQ.1) &
-         WRITE(6,'(A,3I5)') 'NXDMIN,NXDMAX,NXWMAX=',NXDMIN,NXDMAX,NXWMAX
+         WRITE(6,'(A,3I8)') 'NXDMIN,NXDMAX,NXWMAX=',NXDMIN,NXDMAX,NXWMAX
 
 ! Allocation of data index array
 
@@ -81,7 +81,7 @@ CONTAINS
                 IF(NCLA(NXD,NX,NS).EQ.0) THEN
                    NCL=NCL+1
                    NCLA(NXD,NX,NS)=NCL
-!                   WRITE(22,'(A,4I5)') 'nxd,nx,ns,ncl=',NXD,NX,NS,NCL
+!                   WRITE(22,'(A,4I8)') 'nxd,nx,ns,ncl=',NXD,NX,NS,NCL
                 END IF
              END IF
           END DO
@@ -89,7 +89,7 @@ CONTAINS
     END DO
     NCLMAX=NCL
 
-    IF(NZMAX.EQ.1) WRITE(6,'(A,I5)') 'NCLMAX=',NCLMAX
+    IF(NZMAX.EQ.1) WRITE(6,'(A,I8)') 'NCLMAX=',NCLMAX
 
 ! Allocation of data array
 
@@ -129,7 +129,7 @@ CONTAINS
 
 !       NX=NXPMAX/2
 !      NC=3
-!      WRITE(6,'(A,3I5,1P4E12.4)') 'DSP:',NS,NX,NC,CGZ(NX,NC),CZ(NX,NC)
+!      WRITE(6,'(A,3I8,1P4E12.4)') 'DSP:',NS,NX,NC,CGZ(NX,NC),CZ(NX,NC)
 
        DO NC=1,NCMAXS
           NN=NC-ABS(IHARM(NS))-1

@@ -1619,7 +1619,8 @@
                     RN_runaway(NR), RN_drei(NR), RN_runaway(NR)-RN_drei(NR), &
                     RJ_ohm(NR), RJ_runaway(NR), RJ_bs(NR), &
                     E1(NR), ER_drei(NR), &
-                    RFP(NR)*RN_disrupt(NR)*1.D20, RFP_AVA(NR)*RN_disrupt(NR)*1.D20, &
+                    RFP(NR)*RN_disrupt(NR)*1.D20, &
+                    RFP_AVA(NR)*RN_disrupt(NR)*1.D20, &
                     RJS(NR,1),ER_crit(NR)
             END DO
          ELSE
@@ -1629,7 +1630,8 @@
                     RN_runaway(NR), RN_drei(NR), RN_runaway(NR)-RN_drei(NR), &
                     RJ_ohm(NR), RJ_runaway(NR), RJ_bs(NR), &
                     E1(NR), ER_drei(NR), &
-                    Rconnor(NR)*RN_disrupt(NR)*1.D20, RFP_AVA(NR)*RN_disrupt(NR)*1.D20, &
+                    Rconnor(NR)*RN_disrupt(NR)*1.D20, &
+                    RFP_AVA(NR)*RN_disrupt(NR)*1.D20, &
                     RJS(NR,1),ER_crit(NR)
             END DO
          END IF
