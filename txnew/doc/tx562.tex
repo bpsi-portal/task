@@ -2798,9 +2798,8 @@ once the mesh is built; with \texttt{rhoaccum} $\ge 0$ the mesh is not refined a
 separatrix, e.g.\ 0.0095 against 0.0052 at \texttt{NRMAX} = 60 with \texttt{rhoaccum} =
 0.95), and when $e^{-(\rho_b-1)/w} > 0.05$, i.e.\ more than 5\% of
 $C^\r{core}(1) - C_\r{SOL}$ remains at the wall.  \texttt{MDLSOLT} = 1 is an input error
-with \texttt{MDANOM} = 3 (MMM95 sets the SOL coefficients itself).  The inputs are kept in a
-fifth extension record of the save file; an older file leaves them as they are, and an
-older build stops before the record.
+with \texttt{MDANOM} = 3 (MMM95 sets the SOL coefficients itself).  The inputs are kept in the
+extension of the save file (Section~\ref{sec:savefile}); a file without them leaves them as they are.
 
 Validation (\texttt{NRMAX} = 60, 3.2\,MW NBI and CDBM unless stated, with the test values
 $D_\r{SOL}=0.3$, $\chi_\r{SOL}=\mu_\r{SOL}=1$\,m$^2$/s and $w=0.02$, which are not defaults).
@@ -3295,9 +3294,9 @@ self-sputtering term is zero there, where it was negative with 0
 ($-4\times10^{16}$ against $1.8\times10^{19}$\,s$^{-1}$ of sputtering by the bulk ions).
 With NBI the self-sputtering source is then $+2.9\times10^{17}$\,s$^{-1}$ from the inner SOL
 instead of $-4\times10^{16}$\,s$^{-1}$, and the steady states differ in the impurity as given above.
-\texttt{MDLRCY} is kept in the save file (extension record 7); \texttt{LOAD} sets it
-from a file that has the record, so a value given before \texttt{LOAD} applies only
-to older files: a file written before the record (before 2026-10-13) continues with the
+\texttt{MDLRCY} is kept in the save file (Section~\ref{sec:savefile}); \texttt{LOAD} sets it
+from a file that has it, so a value given before \texttt{LOAD} applies only
+to files without it: such a file continues with the
 \texttt{MDLRCY} of the input, 1 unless it sets 0.  \texttt{W} and \texttt{O 7} print for the bulk ions and the impurity
 the loss, the supply and their difference, and the target recycling as the equations
 take it.
@@ -3703,6 +3702,80 @@ At 0.4\,s the two solutions differ by less than $10^{-5}$ of the profile RMS
 except $\psitd$ ($3\times10^{-4}$, its floor) and $BV_1$ near the axis
 ($\le 8\times10^{-5}$).
 
+\subsection{The save file and \texttt{LOAD}}
+\label{sec:savefile}
+
+A save file (\texttt{S}) is the base layout, unchanged since 2025-12 (33 records: the
+inputs of V5.50, $X$, the graph data, \texttt{PoyntI(1:2)}, \texttt{CPsi}, \texttt{VPoynt},
+\texttt{thrp}), followed by one extension that carries every input and every state added
+since, item by item and by name (2026-10-14):
+\begin{center}
+\begin{tabular}{|l|l|}\hline
+header & $-1$, \texttt{'TXEXTREC'}, format version (1), number of items \\
+each item & a record (name, kind, length), then a record of its values \\
+end & a record (\texttt{'END'}, 0, 0) \\\hline
+\end{tabular}
+\end{center}
+The kinds are \texttt{integer(4)}, \texttt{real(8)} and character (a logical is stored as
+0 or 1).  The items are listed once, in \texttt{savext\_items} (\texttt{txfile.f90}), which
+\texttt{SAVE} runs to write them and \texttt{LOAD} to take them by name: an item that a file
+does not have keeps the value of the process and is listed, and an item of the file that the
+build does not know is listed and skipped.  A new input or state is one line there; the format
+version changes only when an item changes its meaning.  The items are
+\begin{itemize}
+\item every input of the namelist that the base layout does not carry: those of the former
+  extension records (\texttt{MDLNSUP}, \texttt{RWALL}, \texttt{RWALLZ}, \texttt{RWALLIZ},
+  \texttt{FSTPTM}, \texttt{PROFD2C}, \texttt{PROFD2W}, \texttt{MDLSOLT} and its inputs,
+  \texttt{MDLRCY}) and 45 that no record carried before, among them inputs of every step
+  (\texttt{ieqread}, \texttt{NANDER}, \texttt{NRETRY}, \texttt{MDLNCA}, \texttt{MDLN0FL},
+  \texttt{RLXN0}, \texttt{MDLNZD}, \texttt{MDLWBC}, \texttt{FSCBAL}, \texttt{FSCBEL},
+  \texttt{RhoETB}, the \texttt{PCH*} inputs, \texttt{Tqt0}, \texttt{Tqp0}, \ldots) and
+  \texttt{Zeffin}, from which \texttt{LOAD} (through the input check) derives
+  \texttt{PNsSUP(2:3)} with \texttt{MDLNSUP} = 1.  A file of a run thus continues with its own
+  values of all of them; as for the inputs of the base layout, values given before
+  \texttt{LOAD} are replaced, and values given after it apply;
+\item the state of the run: the ETB factor and whether it is held; the form of $\psi$
+  (\texttt{RMUB1}: $X_4=\psi/\mu_0$ once a beam was given); the values of \texttt{TXGLOB} that
+  the next step takes differences and time integrals against (\texttt{CPsi\_old},
+  \texttt{PoyntI(1:4)}, $dW/dt$, the previous-step values of the Poynting-flux terms);
+\item the identification of the external data of the process, which the file does not carry:
+  the NBI data read by \texttt{F} (kind 1--3, file, number of data and of lines,
+  \texttt{PNBHex}, a hash of the values read) and whether ripple data were read (\texttt{F R}).
+\end{itemize}
+
+\texttt{LOAD} takes the form of $\psi$ from the record; the estimate from the edge gradient
+of $\psi$ (2026-10-13) is kept for files without it and as a check (a disagreement is
+reported).  With the history of \texttt{TXGLOB}, the loaded point keeps \texttt{PoyntI},
+\texttt{VPoynt(1)}, \texttt{CPsi} and $dW/dt$ of the run that wrote the file, and the next step
+goes on from them (before, they began again from zero at a \texttt{LOAD}, as they still do for
+a file without the history).  The two-step BDF history is not saved: the first step after
+\texttt{LOAD} is backward Euler, as before.  With \texttt{IGBDF} = 0, a \texttt{LOAD} in a new
+process continues bit for bit as the run that wrote the file, in $X$, \texttt{CPsi},
+\texttt{PoyntI}, \texttt{VPoynt} and every column of the time history (N60, NBI, 20 steps);
+with \texttt{IGBDF} = 1 $X$ differs by the backward-Euler restart (after 20 steps
+$2\times10^{-6}$ of their maxima in the densities and pressures, up to $6\times10^{-4}$ in a beam
+variable), and the global quantities with it.  The same holds without NBI.  $X$ itself is unchanged by the extension on
+every path tried.
+
+\texttt{LOAD} compares the external data of the process with the identification in the file,
+and again at the first \texttt{CONT} after it when the \texttt{LOAD} reported a difference or
+\texttt{F} came in between.  It warns when NBI data of the run that wrote the file are missing
+in the process (the run would go on without them), when NBI data of the process would be added
+to a run that had none, and when the two differ in kind, file, size or values (the hash), and
+likewise for the ripple data.  For a file without the identification, \texttt{PNBH} of the file
+beyond \texttt{PNBHP} + \texttt{PNBHT1} + \texttt{PNBHT2} (\texttt{PNBHex}) shows whether its run
+had OFMC data, and is compared with that of the process.  These are messages only: nothing is
+added, removed or stopped.
+
+Compatibility.  A file of the base layout only (written before the extension records, before
+2026-09-30) loads as before: the items above keep the values of the process (listed), the ETB
+factor is formed from \texttt{NT} and \texttt{NTMAX}, and the form of $\psi$ is estimated.  The
+extension records 1--7 of the development builds of 2026-09-30 to 2026-10-13, named in the
+changes below, are no longer read: such a file loads as one of the base layout, with a message
+(each of the internal test files with them loads bit for bit as before, since the process had
+their values).  The builds with those records read the leading $-1$ of the new header as no
+extension and load a new file as one of the base layout.
+
 \subsection{New defaults and V5.52 compatibility}
 
 \begin{center}
@@ -3734,6 +3807,9 @@ either case.
 
 \subsection{Other changes since V5.51}
 \label{sec:v552other}
+
+The extension records 1--7 of the save file named below were replaced on 2026-10-14 by the
+extension of Section~\ref{sec:savefile}, which carries the same inputs and states.
 
 \begin{itemize}
 \item \texttt{MDLPCK} = 2 (default): block-tridiagonal solver with one step of
@@ -3898,6 +3974,18 @@ either case.
   (the slow neutrals at the wall, increments up to 254 \texttt{EPS}): 0 is bit for bit $-1$ there,
   2 stops at 0.282\,s; with \texttt{EPS} $<0$, $-1$ accepts one substep more and stops one step later
   than 0; with \texttt{MODECV} = 1, $-1$ stops at 0.282\,s and 0 runs to 0.7\,s.
+  With \texttt{EPS} $>0$ and \texttt{MODECV} = 0 the two differ only when a step, or a substep
+  coarser than the finest size, converges exactly at the sweep \texttt{ICMAX} ($-1$ takes it again);
+  at the finest size both accept it as converged.  Where the axis mode below stalls many steps
+  (6.4\,MW, the offsets 0.1, \texttt{NRMAX} = 240, from the state at 0.4\,s to 0.475\,s,
+  $\Delta t = 2.5\times10^{-5}$\,s, \texttt{EPS} = $10^{-6}$, \texttt{NRETRY} = 1; 3000 steps) 1150
+  steps are retaken (every step at 0.442--0.462\,s, every other one after), and none had converged at the sweep
+  \texttt{ICMAX}: 1149 stalled at \texttt{LQ*8} on or next to the axis (1134 at \texttt{LQz8}),
+  one at \texttt{LQb2}.  Of their substeps 18 converged exactly at the sweep \texttt{ICMAX} and 26 were
+  accepted without convergence (25 at \texttt{LQz8} with increments of 1--2 \texttt{EPS} after
+  0.471\,s, one at \texttt{LQe8} with 800 \texttt{EPS} at 0.441\,s).  $-1$ and 0 give the same
+  results bit for bit at every saved time, and the same CPU time within the scatter of runs
+  sharing the machine (8840--8880\,s).
 \item Convergence test of $\psid$ (\texttt{LQm3}) with a rounding-floor term, as for $\psitd$
   (Sec.~\ref{sec:lqm3tol}).  No input; a run in which no step reaches the floor is bit-identical.
 \item Known numerical limit, the axis \texttt{LQ*8}: with NBI the Picard map has a slowly contracting
@@ -4338,6 +4426,15 @@ either case.
   the form without one until the next parameter input: the same solution as with \texttt{F} after
   \texttt{LOAD}, with other rounding ($10^{-8}$).  Now the two orders agree bit for bit; without
   \texttt{F} nothing changes.
+\item The save file has one extension with its items by name (Section~\ref{sec:savefile},
+  2026-10-14), in place of the extension records 1--7, and it carries every input of the namelist:
+  45 inputs had no record, among them inputs used at every step and \texttt{Zeffin}, so that a
+  \texttt{LOAD} continued with the values of the process (\texttt{PNsSUP(2:3)} of
+  \texttt{MDLNSUP} = 1 from its \texttt{Zeffin}).  It also carries the form of $\psi$, the history
+  of \texttt{TXGLOB} (\texttt{CPsi} and the Poynting flux go on across \texttt{LOAD}) and the
+  identification of the external NBI and ripple data, which \texttt{LOAD} and the next
+  \texttt{CONT} compare with the process.  Files of the base layout load as before; files with the
+  extension records 1--7 load as ones of the base layout.
 \end{itemize}
 
 \begin{thebibliography}{9}
