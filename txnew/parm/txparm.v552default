@@ -53,12 +53,13 @@ code is lower by 4.8% in n_e and 8% in n_z, uniformly in radius (the wall-row fi
 With NBI (3.2 + 0.4 MW) the densities and temperatures agree to 5-8%, but the core rotation is
 40% higher (pinch sign and V5.61 fast-ion fixes).  V5.52.20 itself, run with EPS = 1e-6, stalls
 on psi_t dot near the wall; with its default EPS = 1e-3 it does not.
-RDltRPn = 2.4 (the former fixed value) is the V5.52 behaviour already.  NANDER is not stored in
-the save file, so NANDER = 0 has to stay in the txparm of a run continued from a file.
-The save file stores FSTPTM (with FSVAHL and PNsSUP) and imodel_neo, so a run continued from
-a file keeps its closures.  It stores MDLRCY since 2026-10-13 (extension record 7): a file
-written before takes the MDLRCY of the input, so MDLRCY = 0 has to stay in the txparm of a run
-continued from such a file.
+RDltRPn = 2.4 (the former fixed value) is the V5.52 behaviour already.
+A save file keeps every input of the namelist since 2026-10-14 (the extension of the save file,
+doc/tx562 "The save file and LOAD"), so a run continued from such a file keeps all of the
+values above.  Of them a file written before keeps only FSLP, FSVAHL, PNsSUP, EPS and
+imodel_neo (the base layout; the extension records of the development builds of 2026-09-30 to
+2026-10-13 are no longer read): a run continued from such a file takes the others from the
+txparm, so they have to stay in it.
 
  &tx
   FSLP    = 0.3d0
