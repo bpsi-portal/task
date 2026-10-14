@@ -1437,20 +1437,25 @@ subroutine ascii_input
   character(len=100) :: TXFNAM
   character(len=180) :: kline, kline1, kline2
   character(len=20)  :: kmesh, kdata
-  integer(4) :: nol, itype
+  integer(4) :: nol, itype, kfile
   LOGICAL :: LEX
 
+  ! The kind of the data (1-3) is read into kfile.  iflag_file, the kind of the external
+  ! data the process holds, is set only when the data have been read: an answer whose file
+  ! does not exist, or an end of input before the data, leaves the external data of the
+  ! process as they were (kind and data); a failure after the data held before were freed
+  ! leaves the process without external data (iflag_file = 0).
   ! Check a mode of input file
   do 
      write(6,*) '# NBI input from OFMC (1)(2) or arbitrary input (3) ?'
      flush(6)
-     read(*,'(I1)',iostat=ist) iflag_file
+     read(*,'(I1)',iostat=ist) kfile
      if(ist > 0) then
         cycle
      else if(ist < 0) then
         return
      end if
-     if(iflag_file >= 1 .and. iflag_file <= 3) then
+     if(kfile >= 1 .and. kfile <= 3) then
         exit
      else
         cycle
@@ -1458,31 +1463,33 @@ subroutine ascii_input
   end do
 
   ! *** Pre-defined input (OFMC: OrbitEffectDist.dat) ***************
-  if(iflag_file == 1) then
+  if(kfile == 1) then
      TXFNAM = 'OrbitEffectDist.dat'
      inquire(file=TXFNAM,exist=LEX)
      if (LEX) then
      else
         write(6,*) 'XX  FILE ( ', TXFNAM(1:len_trim(TXFNAM)), ' ) DOES NOT exist !'
+        write(6,'(A)') ' ## Nothing read: the external data of the process are as they were'
         return
      end if
 
      n_infiles = 8
 
   ! *** Pre-defined input (OFMC: Torque.txt) ************************
-  else if(iflag_file == 2) then
+  else if(kfile == 2) then
      TXFNAM = 'Torque.txt'
      inquire(file=TXFNAM,exist=LEX)
      if (LEX) then
      else
         write(6,*) 'XX  FILE ( ', TXFNAM(1:len_trim(TXFNAM)), ' ) DOES NOT exist !'
+        write(6,'(A)') ' ## Nothing read: the external data of the process are as they were'
         return
      end if
 
      n_infiles = 1 ! only the TOTAL torque
 
   ! *** Arbitrary input *********************************************
-  else if(iflag_file == 3) then
+  else if(kfile == 3) then
      ! Check ASCII file
      do
         write(6,*) '# INPUT : LOAD ASCII FILE NAME'
@@ -1523,7 +1530,7 @@ subroutine ascii_input
   allocate(infiles(1:n_infiles))
 
   ! *** Pre-defined input (OFMC: OrbitEffectDist.dat) ***************
-  if(iflag_file == 1) then
+  if(kfile == 1) then
      ! Read data
      open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='formatted')
      if (IST == 0) then
@@ -1532,7 +1539,7 @@ subroutine ascii_input
      else if (IST > 0) then
         write(6,*) 'XX  ASCII FILE open ERROR !, iostat = ', IST
      else if (IST < 0) then
-        deallocate(infiles)
+        deallocate(infiles) ; iflag_file = 0 ; infile_name = ' '
         return
      end if
 
@@ -1710,7 +1717,7 @@ subroutine ascii_input
 !!$     stop
 
   ! *** Pre-defined input (OFMC: Torque.txt) ************************
-  else if(iflag_file == 2) then
+  else if(kfile == 2) then
      ! Read data
      open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='formatted',position='rewind')
      if (IST == 0) then
@@ -1719,7 +1726,7 @@ subroutine ascii_input
      else if (IST > 0) then
         write(6,*) 'XX  ASCII FILE open ERROR !, iostat = ', IST
      else if (IST < 0) then
-        deallocate(infiles)
+        deallocate(infiles) ; iflag_file = 0 ; infile_name = ' '
         return
      end if
 
@@ -1800,7 +1807,7 @@ subroutine ascii_input
      close(io)
 
   ! *** Arbitrary input *********************************************
-  else if(iflag_file == 3) then
+  else if(kfile == 3) then
 
      ! Read data
      do i = 1, n_infiles
@@ -1811,7 +1818,7 @@ subroutine ascii_input
         else if (IST > 0) then
            write(6,*) 'XX  ASCII FILE open ERROR !, iostat = ', IST
         else if (IST < 0) then
-           deallocate(infiles)
+           deallocate(infiles) ; iflag_file = 0 ; infile_name = ' '
            return
         end if
 
@@ -1824,7 +1831,7 @@ subroutine ascii_input
            if(ist > 0) then
               cycle
            else if(ist < 0) then
-              deallocate(infiles)
+              deallocate(infiles) ; iflag_file = 0 ; infile_name = ' '
               return
            else
               if(itype <= 0 .or. itype > 5) cycle
@@ -1842,7 +1849,7 @@ subroutine ascii_input
            if (ist > 0) then
               cycle
            else if(ist < 0) then
-              deallocate(infiles)
+              deallocate(infiles) ; iflag_file = 0 ; infile_name = ' '
               return
            else
               exit
@@ -1858,7 +1865,7 @@ subroutine ascii_input
            if (ist > 0) then
               cycle
            else if(ist < 0) then
-              deallocate(infiles)
+              deallocate(infiles) ; iflag_file = 0 ; infile_name = ' '
               return
            else
               exit
@@ -1904,7 +1911,7 @@ subroutine ascii_input
      end do
 
   end if
-  infile_name = TXFNAM
+  iflag_file = kfile ; infile_name = TXFNAM
 
 end subroutine ascii_input
 
