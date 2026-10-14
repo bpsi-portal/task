@@ -32,6 +32,9 @@ After V5.62.00 (particle transport, wall, time stepping):
   NANDER  = 0     plain Picard sweeps                 (now -20, Anderson acceleration)
   MDLRCY  = 0     target recycling of the SOL loss with its sign
                                                       (now 1, only where it is a net loss)
+  MDLNCA  = -1    a step not converged in ICMAX sweeps as V5.52 treated it: accepted with
+                  EPS > 0 and MODECV = 0, the run stopped otherwise
+                                                      (now 0, by the sign of EPS alone)
 
 Not restored by any input (implementation changes; the results differ slightly):
   - the constant term of the Tala momentum pinch is inward (V5.52: outward, a sign error
@@ -78,4 +81,5 @@ continued from such a file.
   EPS     = 1.d-3
   NANDER  = 0
   MDLRCY  = 0
+  MDLNCA  = -1
  &end

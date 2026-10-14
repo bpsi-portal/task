@@ -879,7 +879,7 @@ contains
 
        ! The step failed: a singular matrix, a non-finite value or a negative density or
        ! temperature (TXCHCK), or no convergence that is not accepted (MDLNCA; with the
-       ! default -1, EPS < 0 or MODECV /= 0).  Its iterate is not a
+       ! default 0, EPS < 0; with -1 also MODECV /= 0).  Its iterate is not a
        ! result and is not stored, in X or in the graphs.  The run stops on the last
        ! accepted step, with the time, the plasma current, the step counts, the BDF
        ! history and the ETB factor of that step, so that SAVE writes that state and a

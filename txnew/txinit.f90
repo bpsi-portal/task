@@ -472,19 +472,22 @@ contains
 
     !     MDLNCA : a (sub)step whose Picard iteration has not converged in ICMAX sweeps,
     !              after the retries of NRETRY:
-    !              -1: the original rule (default): with MODECV = 0 accepted for EPS > 0 and
-    !                  the run stopped for EPS < 0, with MODECV /= 0 stopped for either sign;
-    !                  a substep before the last one of a retried step accepted in every case
     !               0: by the sign of EPS alone, for every (sub)step and either MODECV:
-    !                  accepted for EPS > 0, the run stopped for EPS < 0
+    !                  accepted for EPS > 0, the run stopped for EPS < 0 (default)
     !               1: accepted (|EPS| is the tolerance)
     !               2: the run stopped: no (sub)step is accepted without convergence
+    !              -1: the rule before 2026-10-14, kept for compatibility: with MODECV = 0
+    !                  accepted for EPS > 0 and the run stopped for EPS < 0, with
+    !                  MODECV /= 0 stopped for either sign; a substep before the last one
+    !                  of a retried step accepted in every case
     !              With -1 a (sub)step that converged at the sweep IC = ICMAX counts as not
-    !              converged (NRETRY retakes it); with 0-2 it is converged.
+    !              converged (NRETRY retakes it); with 0-2 it is converged.  With EPS > 0 and
+    !              MODECV = 0, 0 and -1 differ only there.
     !              An accepted one is reported (WARNING: ... accepted at IC = ICMAX).  A run
     !              that stops ends on the last accepted step, the state at the start of the
-    !              step that failed, and SAVE writes that state.
-    MDLNCA = -1
+    !              step that failed, and SAVE writes that state.  A save file keeps the value
+    !              (since 2026-10-14); LOAD of an older file leaves the value of the input.
+    MDLNCA = 0
 
     !   Parameter of heat loss to divertor (default = 1.0)
     FSLTs(1:NSM) = 1.d0
