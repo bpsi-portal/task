@@ -466,11 +466,12 @@ module tx_commons
   real(8),    dimension(:,:),   allocatable :: X, XOLD
 
   ! .false. while the two-step BDF has no genuine X(t-dt) to lean on: at a cold
-  ! start, and after a LOAD because XOLD does not travel in the save file.  A
-  ! CONT does have one and keeps it.  See TXCALB.
+  ! start, and after a LOAD of a file without the history (the save file carries
+  ! XOLD, bdf_history_ready and bdf_history_dt since 2026-10-14).  A CONT does
+  ! have one and keeps it.  See TXCALB.
   logical :: bdf_history_ready = .false.
-  ! Step size the stored XOLD belongs to.  The two-step BDF weights are the
-  ! fixed-step ones, so the history is only usable while DT is unchanged.
+  ! Step size the stored XOLD belongs to: the first step after a change of DT
+  ! takes the variable-step weights with DT / bdf_history_dt (bdf2_weights).
   real(8) :: bdf_history_dt = 0.d0
 
   ! Diagnostics

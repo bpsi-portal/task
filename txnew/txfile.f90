@@ -23,7 +23,7 @@ module tx_savext
   implicit none
   private
   public :: EXTVER, EXTSENT, EXTTAG, XM_COUNT, XM_WRITE, XM_READ, xmode, xio, xcount, &
-       &    xreg, xreg_ia, xreg_ra, xclear, xread_items, xhas, xreport
+       &    xreg, xreg_ia, xreg_ra, xclear, xread_items, xhas, xok, xreport
   integer(4), parameter :: EXTVER = 1, EXTSENT = -1
   character(len=8), parameter :: EXTTAG = 'TXEXTREC'
   integer(4), parameter :: XM_COUNT = 1, XM_WRITE = 2, XM_READ = 3
@@ -32,7 +32,7 @@ module tx_savext
   type xitem
      character(len=16) :: name
      integer(4) :: kind, n
-     logical :: used
+     logical :: used, bad
      integer(4), allocatable :: iv(:)
      real(8), allocatable :: rv(:)
      character(len=:), allocatable :: cv
@@ -65,7 +65,7 @@ contains
     do i = 1, nitem
        read(io, iostat=ist) name, kind, n
        if(ist /= 0) return
-       xtab(i)%name = name ; xtab(i)%kind = kind ; xtab(i)%n = n ; xtab(i)%used = .false.
+       xtab(i)%name = name ; xtab(i)%kind = kind ; xtab(i)%n = n ; xtab(i)%used = .false. ; xtab(i)%bad = .false.
        select case(kind)
        case(KINT)
           allocate(xtab(i)%iv(n)) ; read(io, iostat=ist) xtab(i)%iv
@@ -101,6 +101,16 @@ contains
     xhas = xfind(name) > 0
   end function xhas
 
+  ! whether the item was taken from the file read last (there, and of the kind and length of
+  ! the build); valid after the pass of savext_items that read the file
+  logical function xok(name)
+    character(len=*), intent(in) :: name
+    integer(4) :: k
+    k = xfind(name)
+    xok = .false.
+    if(k > 0) xok = .not. xtab(k)%bad
+  end function xok
+
   ! the item k of the file for the item name of kind kind and length n, or 0
   integer(4) function xget(name, kind, n)
     character(len=*), intent(in) :: name
@@ -114,6 +124,7 @@ contains
        if(xtab(xget)%kind /= kind .or. (kind /= KCHAR .and. xtab(xget)%n /= n)) then
           nbad = nbad + 1
           if(len_trim(xbad) + len_trim(name) + 2 < len(xbad)) xbad = trim(xbad)//' '//trim(name)
+          xtab(xget)%bad = .true.
           xget = 0
        end if
     end if
@@ -447,7 +458,7 @@ subroutine savext_items
        & RDltRPn, ICCALC, ieqread, ipbtdir, DMAG0, RMAGMN, RMAGMX, oldmixa, iaxproj, rhoaxproj, &
        & Dnfac, MDBSETA, MDLNZD, MDLN0FL, FLlim, RLXN0, MDLSOL, MDLWBC, NANDER, NRETRY, MDLNCA, &
        & EpsHM, HPN, irktrc, DelRho, DelN, Q0, QA, MDITSN, MDITST, MDINTN, MDINTT, MDINTC, midbg, &
-       & rMUb1, CPsi_old, PoyntI, WPDOT, WPPRE, TPRE
+       & rMUb1, CPsi_old, PoyntI, WPDOT, WPPRE, TPRE, XOLD, bdf_history_ready, bdf_history_dt
   use tx_glob, only : T_TX_old, zIp_old, zIpol_old, VLOOP_old, VLOOPpol_old, PS2_old, &
        & WFEengy_old, WFMengy_old, WJengy_old, WFMpengy_old, WFMtengy_old
   use tx_savext, only : xreg, xreg_ia, xreg_ra
@@ -495,6 +506,13 @@ subroutine savext_items
   call xreg('WJENGY_OLD', WJengy_old)
   call xreg('WFMPENGY_OLD', WFMpengy_old)
   call xreg('WFMTENGY_OLD', WFMtengy_old)
+  ! --- State of the run: the history of the two-step BDF (IGBDF /= 0; TXLOOP), X one step
+  !     before the saved one, the step it was taken with and whether it is there, so that the
+  !     first step after LOAD is the one the run would have taken (TXLOAD: all three or none;
+  !     XOLD has the length of the grid of the file) ---
+  call xreg('BDF_READY', bdf_history_ready)
+  call xreg('BDF_DT', bdf_history_dt)
+  call xreg_ra('XOLD', XOLD, size(XOLD))
   ! --- External data of the process at the saved time, not carried by the file (tx_extid):
   !     NBI data read by F (kind: 0 none, 1-3 as ascii_input) and ripple data (F R) ---
   call xreg('EXT_NBI_KIND', xid%kind)
@@ -918,7 +936,7 @@ subroutine TXLOAD(IST)
        & IGBDF,ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor, &
        & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,rIP,thrp,kappa,CPsi,VPoynt,PoyntI, &
        & ErV,PTsV_FIX,PNsV_FIX,ErV_FIX, &
-       & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM,bdf_history_ready,stdin_ended, &
+       & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM,bdf_history_ready,bdf_history_dt,stdin_ended, &
        & PNsSUPlast, FcoefETB, FrdcETB, ETBheld, &
        & LQm4, ckt, vv, Pi
   use tx_init, only : TXCALM
@@ -931,7 +949,7 @@ subroutine TXLOAD(IST)
   use tx_glob, only : TXGLOB, glob_hist_loaded
   use mod_eqneo, only : wrap_eqneo
   use mod_cross_section, only : spline_table_carbon_rate_coef_adas, spline_table_beam_rate_coef
-  use tx_savext, only : EXTSENT, EXTTAG, EXTVER, XM_READ, xmode, xclear, xread_items, xhas, xreport
+  use tx_savext, only : EXTSENT, EXTTAG, EXTVER, XM_READ, xmode, xclear, xread_items, xhas, xok, xreport
   use tx_extid, only : extid, xid, extid_loaded, extid_check
   implicit none
   integer(4), intent(out) :: IST
@@ -1025,8 +1043,8 @@ subroutine TXLOAD(IST)
   end if
 
   read(io) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
-  ! XOLD does not travel in the save file, so the two-step BDF restarts
-  ! from a backward-Euler step (TXCALB).
+  ! The two-step BDF history is taken from the extension below if the file has it; else the
+  ! BDF restarts from a backward-Euler step (TXCALB).
   bdf_history_ready = .false.
 
   read(io) NGT
@@ -1079,7 +1097,18 @@ subroutine TXLOAD(IST)
   call xreport
   call extid_loaded(xhas('EXT_NBI_KIND'), PNBH - (PNBHP + PNBHT1 + PNBHT2))
   etb_loaded = xhas('FCOEFETB') .and. xhas('ETBHELD')
-  glob_hist_loaded = all([(xhas(trim(HISTITEMS(i))), i = 1, size(HISTITEMS))])
+  glob_hist_loaded = all([(xok(trim(HISTITEMS(i))), i = 1, size(HISTITEMS))])
+  ! The two-step BDF history: all of it or none.  A file without it (written before
+  ! 2026-10-14) restarts from a backward-Euler step, as before.
+  if( .not. (xok('XOLD') .and. xok('BDF_READY') .and. xok('BDF_DT')) ) bdf_history_ready = .false.
+  if( IGBDF /= 0 ) then
+     if( bdf_history_ready ) then
+        write(6,'(A,ES11.4,A)') ' ## Two-step BDF history from the file (its step', bdf_history_dt, &
+             & '): the next step continues it'
+     else
+        write(6,'(A)') ' ## No two-step BDF history in the file: the first step after LOAD is backward Euler'
+     end if
+  end if
   if( .not. etb_loaded ) then
      ! A file without the ETB factor: from the step count of the run that wrote it, as
      ! TXCALV forms it (held if that run reached its last step).  A
