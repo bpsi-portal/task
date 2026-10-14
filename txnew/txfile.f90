@@ -1,5 +1,333 @@
 !***************************************************************
 !
+!   Extension of the save file
+!
+!***************************************************************
+! A save file is the base layout of TXSAVE (unchanged since 2025-12: 33 records, the
+! last one thrp) followed by one extension, which carries every input and every state
+! added after that layout, item by item and by name:
+!   header     : EXTSENT (-1), EXTTAG ('TXEXTREC'), EXTVER, the number of items
+!   each item  : a record (name, kind, length) and a record of the values
+!                (kind 1: integer(4), 2: real(8), 3: character; a logical is 0 or 1)
+!   end        : a record ('END', 0, 0)
+! The items are listed once, in savext_items, which TXSAVE runs to write them and TXLOAD
+! to take them from the items it has read.  An item that a file does not have keeps its
+! current value and is reported; an item of the file that the build does not know is
+! reported and skipped.  So an item is added by one line in savext_items, and EXTVER
+! changes only when an item changes its meaning.
+! A TXLOAD of the builds with the development extension records (1-7, BR-43 to BR-51)
+! reads the leading -1 as the version of those records and sees no extension.  This
+! TXLOAD does not read those records: a file that has them loads as one of the base
+! layout.
+module tx_savext
+  implicit none
+  private
+  public :: EXTVER, EXTSENT, EXTTAG, XM_COUNT, XM_WRITE, XM_READ, xmode, xio, xcount, &
+       &    xreg, xreg_ia, xreg_ra, xclear, xread_items, xhas, xreport
+  integer(4), parameter :: EXTVER = 1, EXTSENT = -1
+  character(len=8), parameter :: EXTTAG = 'TXEXTREC'
+  integer(4), parameter :: XM_COUNT = 1, XM_WRITE = 2, XM_READ = 3
+  integer(4), parameter :: KINT = 1, KREAL = 2, KCHAR = 3
+  integer(4) :: xmode = 0, xio = 0, xcount = 0
+  type xitem
+     character(len=16) :: name
+     integer(4) :: kind, n
+     logical :: used
+     integer(4), allocatable :: iv(:)
+     real(8), allocatable :: rv(:)
+     character(len=:), allocatable :: cv
+  end type xitem
+  type(xitem), allocatable :: xtab(:)
+  integer(4) :: nx = 0, nmiss = 0, nbad = 0
+  character(len=3000) :: xmiss = ' '
+  character(len=1000) :: xbad = ' '
+  interface xreg
+     module procedure xreg_i, xreg_ia, xreg_r, xreg_ra, xreg_l, xreg_c
+  end interface xreg
+
+contains
+
+  subroutine xclear
+    if(allocated(xtab)) deallocate(xtab)
+    nx = 0 ; nmiss = 0 ; nbad = 0 ; xmiss = ' ' ; xbad = ' '
+  end subroutine xclear
+
+  ! The nitem items after the header and the end record.  ist /= 0 on a read error or
+  ! a missing end record; the items read before it are kept.
+  subroutine xread_items(io, nitem, ist)
+    integer(4), intent(in) :: io, nitem
+    integer(4), intent(out) :: ist
+    character(len=16) :: name
+    integer(4) :: kind, n, i
+    call xclear
+    allocate(xtab(max(nitem,0)))
+    ist = 0
+    do i = 1, nitem
+       read(io, iostat=ist) name, kind, n
+       if(ist /= 0) return
+       xtab(i)%name = name ; xtab(i)%kind = kind ; xtab(i)%n = n ; xtab(i)%used = .false.
+       select case(kind)
+       case(KINT)
+          allocate(xtab(i)%iv(n)) ; read(io, iostat=ist) xtab(i)%iv
+       case(KREAL)
+          allocate(xtab(i)%rv(n)) ; read(io, iostat=ist) xtab(i)%rv
+       case(KCHAR)
+          allocate(character(len=n) :: xtab(i)%cv) ; read(io, iostat=ist) xtab(i)%cv
+       case default
+          read(io, iostat=ist)
+       end select
+       if(ist /= 0) return
+       nx = i
+    end do
+    read(io, iostat=ist) name, kind, n
+    if(ist == 0 .and. name /= 'END') ist = 1
+  end subroutine xread_items
+
+  integer(4) function xfind(name)
+    character(len=*), intent(in) :: name
+    integer(4) :: i
+    xfind = 0
+    do i = 1, nx
+       if(xtab(i)%name == name) then
+          xfind = i
+          return
+       end if
+    end do
+  end function xfind
+
+  ! whether the file read last has the item
+  logical function xhas(name)
+    character(len=*), intent(in) :: name
+    xhas = xfind(name) > 0
+  end function xhas
+
+  ! the item k of the file for the item name of kind kind and length n, or 0
+  integer(4) function xget(name, kind, n)
+    character(len=*), intent(in) :: name
+    integer(4), intent(in) :: kind, n
+    xget = xfind(name)
+    if(xget == 0) then
+       nmiss = nmiss + 1
+       if(len_trim(xmiss) + len_trim(name) + 2 < len(xmiss)) xmiss = trim(xmiss)//' '//trim(name)
+    else
+       xtab(xget)%used = .true.
+       if(xtab(xget)%kind /= kind .or. (kind /= KCHAR .and. xtab(xget)%n /= n)) then
+          nbad = nbad + 1
+          if(len_trim(xbad) + len_trim(name) + 2 < len(xbad)) xbad = trim(xbad)//' '//trim(name)
+          xget = 0
+       end if
+    end if
+  end function xget
+
+  subroutine xhead(name, kind, n)
+    character(len=*), intent(in) :: name
+    integer(4), intent(in) :: kind, n
+    character(len=16) :: name16
+    name16 = name
+    write(xio) name16, kind, n
+  end subroutine xhead
+
+  subroutine xreg_ia(name, v, n)
+    character(len=*), intent(in) :: name
+    integer(4), intent(in) :: n
+    integer(4), intent(inout) :: v(n)
+    integer(4) :: k
+    select case(xmode)
+    case(XM_COUNT)
+       xcount = xcount + 1
+    case(XM_WRITE)
+       call xhead(name, KINT, n) ; write(xio) v
+    case(XM_READ)
+       k = xget(name, KINT, n)
+       if(k > 0) v(1:n) = xtab(k)%iv(1:n)
+    end select
+  end subroutine xreg_ia
+
+  subroutine xreg_ra(name, v, n)
+    character(len=*), intent(in) :: name
+    integer(4), intent(in) :: n
+    real(8), intent(inout) :: v(n)
+    integer(4) :: k
+    select case(xmode)
+    case(XM_COUNT)
+       xcount = xcount + 1
+    case(XM_WRITE)
+       call xhead(name, KREAL, n) ; write(xio) v
+    case(XM_READ)
+       k = xget(name, KREAL, n)
+       if(k > 0) v(1:n) = xtab(k)%rv(1:n)
+    end select
+  end subroutine xreg_ra
+
+  subroutine xreg_i(name, v)
+    character(len=*), intent(in) :: name
+    integer(4), intent(inout) :: v
+    integer(4) :: w(1)
+    w(1) = v ; call xreg_ia(name, w, 1) ; v = w(1)
+  end subroutine xreg_i
+
+  subroutine xreg_r(name, v)
+    character(len=*), intent(in) :: name
+    real(8), intent(inout) :: v
+    real(8) :: w(1)
+    w(1) = v ; call xreg_ra(name, w, 1) ; v = w(1)
+  end subroutine xreg_r
+
+  subroutine xreg_l(name, v)
+    character(len=*), intent(in) :: name
+    logical, intent(inout) :: v
+    integer(4) :: w(1)
+    w(1) = merge(1, 0, v) ; call xreg_ia(name, w, 1) ; v = w(1) /= 0
+  end subroutine xreg_l
+
+  subroutine xreg_c(name, v)
+    character(len=*), intent(in) :: name
+    character(len=*), intent(inout) :: v
+    integer(4) :: k
+    select case(xmode)
+    case(XM_COUNT)
+       xcount = xcount + 1
+    case(XM_WRITE)
+       call xhead(name, KCHAR, len(v)) ; write(xio) v
+    case(XM_READ)
+       k = xget(name, KCHAR, len(v))
+       if(k > 0) v = xtab(k)%cv
+    end select
+  end subroutine xreg_c
+
+  ! after a LOAD: the items the file did not have (kept at their current values), those
+  ! of another kind or length (kept) and those this build does not know (skipped)
+  subroutine xreport
+    integer(4) :: i, nunk
+    character(len=1000) :: unk
+    if(nmiss > 0) then
+       write(6,'(A,I3,A)') ' ##', nmiss, ' items not in the file, kept at their current values:'
+       call xwrap(xmiss)
+    end if
+    if(nbad > 0) then
+       write(6,'(A,I3,A)') ' ## WARNING:', nbad, ' items of the file of another kind or length, not read:'
+       call xwrap(xbad)
+    end if
+    nunk = 0 ; unk = ' '
+    do i = 1, nx
+       if(.not. xtab(i)%used) then
+          nunk = nunk + 1
+          if(len_trim(unk) + len_trim(xtab(i)%name) + 2 < len(unk)) unk = trim(unk)//' '//trim(xtab(i)%name)
+       end if
+    end do
+    if(nunk > 0) then
+       write(6,'(A,I3,A)') ' ##', nunk, ' items of the file not known to this build, skipped:'
+       call xwrap(unk)
+    end if
+  end subroutine xreport
+
+  subroutine xwrap(list)
+    character(len=*), intent(in) :: list
+    integer(4) :: i, j, n
+    n = len_trim(list) ; i = 1
+    do while(i <= n)
+       j = min(n, i + 99)
+       if(j < n) then
+          do while(j > i .and. list(j+1:j+1) /= ' ')
+             j = j - 1
+          end do
+       end if
+       write(6,'(4X,A)') trim(adjustl(list(i:j)))
+       i = j + 1
+    end do
+  end subroutine xwrap
+
+end module tx_savext
+
+!***************************************************************
+!
+!   The items of the extension of the save file (tx_savext)
+!
+!***************************************************************
+! TXSAVE writes them in this order and TXLOAD takes them by name (xreg).
+
+subroutine savext_items
+  use tx_commons, only : NSM, MDLNSUP, RWALL, RWALLZ, RWALLIZ, FSTPTM, PROFD2C, PROFD2W, &
+       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT, MDLRCY, FcoefETB, ETBheld, &
+       & Zeffin, FSCBAL, FSCBEL, RhoETB, PCHRLN, PCHSLP, PCHWID, RhoPch1, RhoPch2, Tqt0, Tqp0, &
+       & RDltRPn, ICCALC, ieqread, ipbtdir, DMAG0, RMAGMN, RMAGMX, oldmixa, iaxproj, rhoaxproj, &
+       & Dnfac, MDBSETA, MDLNZD, MDLN0FL, FLlim, RLXN0, MDLSOL, MDLWBC, NANDER, NRETRY, MDLNCA, &
+       & EpsHM, HPN, irktrc, DelRho, DelN, Q0, QA, MDITSN, MDITST, MDINTN, MDINTT, MDINTC, midbg
+  use tx_savext, only : xreg, xreg_ia, xreg_ra
+  implicit none
+
+  ! --- Inputs added after the base layout (the extension records 1-7 of BR-43 to BR-51) ---
+  call xreg('MDLNSUP', MDLNSUP)
+  call xreg('RWALL', RWALL)
+  call xreg('RWALLZ', RWALLZ)
+  call xreg('RWALLIZ', RWALLIZ)
+  call xreg('FSTPTM', FSTPTM, NSM)
+  call xreg('PROFD2C', PROFD2C)
+  call xreg('PROFD2W', PROFD2W)
+  call xreg('MDLSOLT', MDLSOLT)
+  call xreg('DSOLT', DSOLT)
+  call xreg('CHISOLT', CHISOLT, NSM)
+  call xreg('RMUSOLT', RMUSOLT, NSM)
+  call xreg('WSOLT', WSOLT)
+  call xreg('MDLRCY', MDLRCY)
+
+  ! --- State of the run: the ETB factor and whether it is held (MDLETB) ---
+  call xreg('FCOEFETB', FcoefETB)
+  call xreg('ETBHELD', ETBheld)
+
+  ! --- Inputs of the namelist that the base layout missed (BR-52) ---
+  ! used in the time evolution (Zeffin also by TXPARM_CHECK at a LOAD: PNsSUP(2:3) of MDLNSUP = 1)
+  call xreg('ZEFFIN', Zeffin)
+  call xreg('FSCBAL', FSCBAL)
+  call xreg('FSCBEL', FSCBEL)
+  call xreg('RHOETB', RhoETB, size(RhoETB))
+  call xreg('PCHRLN', PCHRLN)
+  call xreg('PCHSLP', PCHSLP)
+  call xreg('PCHWID', PCHWID)
+  call xreg('RHOPCH1', RhoPch1)
+  call xreg('RHOPCH2', RhoPch2)
+  call xreg('TQT0', Tqt0)
+  call xreg('TQP0', Tqp0)
+  call xreg('RDLTRPN', RDltRPn)
+  call xreg('ICCALC', ICCALC)
+  call xreg('IEQREAD', ieqread)
+  call xreg('IPBTDIR', ipbtdir)
+  call xreg('DMAG0', DMAG0)
+  call xreg('RMAGMN', RMAGMN)
+  call xreg('RMAGMX', RMAGMX)
+  call xreg('OLDMIXA', oldmixa)
+  call xreg('IAXPROJ', iaxproj)
+  call xreg('RHOAXPROJ', rhoaxproj)
+  call xreg('DNFAC', Dnfac)
+  call xreg('MDBSETA', MDBSETA)
+  call xreg('MDLNZD', MDLNZD)
+  call xreg('MDLN0FL', MDLN0FL)
+  call xreg('FLLIM', FLlim)
+  call xreg('RLXN0', RLXN0)
+  call xreg('MDLSOL', MDLSOL)
+  call xreg('MDLWBC', MDLWBC)
+  call xreg('NANDER', NANDER)
+  call xreg('NRETRY', NRETRY)
+  call xreg('MDLNCA', MDLNCA)
+  call xreg_ra('EPSHM', EpsHM, size(EpsHM))   ! rank 2, as a sequence
+  call xreg_ia('HPN', HPN, size(HPN))
+  ! used only at a RUN (initial profiles, equilibrium) or by a menu command (N: DelRho, DelN)
+  call xreg('IRKTRC', irktrc)
+  call xreg('DELRHO', DelRho)
+  call xreg('DELN', DelN)
+  call xreg('Q0', Q0)
+  call xreg('QA', QA)
+  call xreg('MDITSN', MDITSN)
+  call xreg('MDITST', MDITST)
+  call xreg('MDINTN', MDINTN)
+  call xreg('MDINTT', MDINTT)
+  call xreg('MDINTC', MDINTC)
+  call xreg('MIDBG', midbg, size(midbg))
+
+end subroutine savext_items
+
+!***************************************************************
+!
 !   Write Data
 !
 !***************************************************************
@@ -227,11 +555,10 @@ subroutine TXSAVE
        & NLCMAX,NCM,NTCOIL,DltRPn,m_pol,n_tor, &
        & MODEAV,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab, &
        & IGBDF,ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor, &
-       & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,thrp,kappa,CPsi,VPoynt,PoyntI,imodel_neo,MDLNSUP, &
-       & RWALL,RWALLZ,RWALLIZ,FSTPTM,PROFD2C,PROFD2W,NSM,MDLSOLT,DSOLT,CHISOLT,RMUSOLT,WSOLT, &
-       & FcoefETB,ETBheld,MDLRCY
+       & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,thrp,kappa,CPsi,VPoynt,PoyntI,imodel_neo
   use tx_graphic, only : NGYTM,NGYVM,MODEG,MODEGL,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP,GTY,GVY,GQY,GTX,GVX
   use tx_interface, only : TOUPPER
+  use tx_savext, only : EXTSENT, EXTTAG, EXTVER, XM_COUNT, XM_WRITE, xmode, xio, xcount
 
   implicit none
   integer(4) :: IST, NQ, NR, NC, I, IGYT, IGYV, io
@@ -281,14 +608,9 @@ subroutine TXSAVE
      end if
   end do
 
-  ! *** Variables defined in tx_commons but not included in the following ***
-  !     Typically, they are used only in the initialization phase.
-  !
-  !   VWpch0, Tqt0, Tqp0, NEMAX, NRA, NRC, DelRho, DelN,
-  !   EpsH, Q0, QA, NCph, NCth, DMAG0, RMAGMN, RMAGMX,
-  !   ieqread, midbg, MDITSN, MDITST, MDINTN, MDINTT, MDINTC
-  !
-  ! *************************************************************************
+  ! The base layout below is followed by the extension (tx_savext, savext_items), which
+  ! carries every input of the namelist that the base layout does not and the state of
+  ! the run added since.
 
   write(io) SLID
   write(io) RCSId
@@ -326,21 +648,14 @@ subroutine TXSAVE
   write(io) (CPsi(I), I=0, 3)
   write(io) (VPoynt(I), I=0, 3)
   write(io) (thrp(I), I=1, 2*NRMAX)
-  ! Extension records for inputs added after the layout above was fixed, one record
-  ! per version (1: MDLNSUP, 2: main-wall recycling, 3: FSTPTM, 4: centre and width of
-  ! the PROFD2 modification, which were constants before, 5: the SOL transport
-  ! connection MDLSOLT and its inputs, 6: the ETB factor and whether it is held,
-  ! state of the run that the step count does not always give, 7: the target
-  ! recycling MDLRCY).  An older TXLOAD stops
-  ! before the records it does not know; TXLOAD reads each one only when it is present.
-  ! FSTPTM was missing from the layout although FSVAHL and the other FS* inputs are in it.
-  write(io) 1, MDLNSUP
-  write(io) 2, RWALL, RWALLZ, RWALLIZ
-  write(io) 3, FSTPTM(1:NSM)
-  write(io) 4, PROFD2C, PROFD2W
-  write(io) 5, MDLSOLT, DSOLT, CHISOLT(1:NSM), RMUSOLT(1:NSM), WSOLT
-  write(io) 6, FcoefETB, merge(1, 0, ETBheld)
-  write(io) 7, MDLRCY
+  ! The extension: header, the items of savext_items, end record (tx_savext)
+  xmode = XM_COUNT ; xcount = 0
+  call savext_items
+  write(io) EXTSENT, EXTTAG, EXTVER, xcount
+  xmode = XM_WRITE ; xio = io
+  call savext_items
+  write(io) 'END             ', 0, 0
+  xmode = 0
   close(io)
   write(6,*) '# DATA WAS SUCCESSFULLY SAVED IN THE FILE.'
 
@@ -372,8 +687,7 @@ subroutine TXLOAD(IST)
        & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,rIP,thrp,kappa,CPsi,VPoynt,PoyntI, &
        & ErV,PTsV_FIX,PNsV_FIX,ErV_FIX, &
        & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM,bdf_history_ready,stdin_ended, &
-       & MDLNSUP, PNsSUPlast, RWALL, RWALLZ, RWALLIZ, FSTPTM, PROFD2C, PROFD2W, &
-       & MDLSOLT, DSOLT, CHISOLT, RMUSOLT, WSOLT, FcoefETB, FrdcETB, ETBheld, MDLRCY, &
+       & PNsSUPlast, FcoefETB, FrdcETB, ETBheld, &
        & LQm4, ckt, vv, Pi
   use tx_init, only : TXCALM
   use tx_graphic, only : allocate_txgraf,deallocate_txgraf, &
@@ -385,20 +699,14 @@ subroutine TXLOAD(IST)
   use tx_glob, only : TXGLOB
   use mod_eqneo, only : wrap_eqneo
   use mod_cross_section, only : spline_table_carbon_rate_coef_adas, spline_table_beam_rate_coef
+  use tx_savext, only : EXTSENT, EXTTAG, EXTVER, XM_READ, xmode, xclear, xread_items, xhas, xreport
   implicit none
   integer(4), intent(out) :: IST
   integer(4) :: NQ, NR, NC, I, IGYT, IGYV, io
   character(len=100) ::  TXFNAM, RCSId
-  character(len=8) :: LOADSLID
-  integer(4) :: istx, iextver, mdlnsup_load, ipot_cur, ierr_file, ier_alloc
-  real(8), dimension(3) :: rwall_load
-  real(8), dimension(NSM) :: fstptm_load
-  real(8), dimension(2) :: profd2_load
-  integer(4) :: mdlsolt_load
-  real(8) :: dsolt_load, wsolt_load
-  real(8), dimension(NSM) :: chisolt_load, rmusolt_load
-  integer(4) :: ietbheld_load, mdlrcy_load
-  real(8) :: fcoefetb_load, rmub2inv
+  character(len=8) :: LOADSLID, exttag_file
+  integer(4) :: istx, iextver, ifirst, nitem, ipot_cur, ierr_file, ier_alloc
+  real(8) :: rmub2inv
   logical :: LEX, etb_loaded, beam_form
 
   do 
@@ -500,57 +808,40 @@ subroutine TXLOAD(IST)
   read(io) (CPsi(I), I=0, 3)
   read(io) (VPoynt(I), I=0, 3)
   read(io) (thrp(I), I=1, 2*NRMAX)
-  ! Extension record (version 1), absent in files written before it was introduced:
-  ! then MDLNSUP keeps its current value.
-  etb_loaded = .false.
-  read(io,iostat=istx) iextver, mdlnsup_load
-  if( istx == 0 .and. iextver >= 1 ) then
-     MDLNSUP = mdlnsup_load
-     read(io,iostat=istx) iextver, rwall_load(1:3)
-     if( istx == 0 .and. iextver >= 2 ) then
-        RWALL = rwall_load(1) ; RWALLZ = rwall_load(2) ; RWALLIZ = rwall_load(3)
-        read(io,iostat=istx) iextver, fstptm_load(1:NSM)
-        if( istx == 0 .and. iextver >= 3 ) then
-           FSTPTM(1:NSM) = fstptm_load(1:NSM)
-           read(io,iostat=istx) iextver, profd2_load(1:2)
-           if( istx == 0 .and. iextver >= 4 ) then
-              PROFD2C = profd2_load(1) ; PROFD2W = profd2_load(2)
-              read(io,iostat=istx) iextver, mdlsolt_load, dsolt_load, chisolt_load(1:NSM), &
-                   & rmusolt_load(1:NSM), wsolt_load
-              if( istx == 0 .and. iextver >= 5 ) then
-                 MDLSOLT = mdlsolt_load ; DSOLT = dsolt_load ; WSOLT = wsolt_load
-                 CHISOLT(1:NSM) = chisolt_load(1:NSM) ; RMUSOLT(1:NSM) = rmusolt_load(1:NSM)
-                 read(io,iostat=istx) iextver, fcoefetb_load, ietbheld_load
-                 if( istx == 0 .and. iextver >= 6 ) then
-                    FcoefETB = fcoefetb_load ; ETBheld = ietbheld_load /= 0
-                    etb_loaded = .true.
-                    read(io,iostat=istx) iextver, mdlrcy_load
-                    if( istx == 0 .and. iextver >= 7 ) then
-                       MDLRCY = mdlrcy_load
-                    else
-                       write(6,'(A,I2)') ' ## No record of MDLRCY in the file: kept at', MDLRCY
-                    end if
-                 end if
-              else
-                 write(6,'(A,I2)') ' ## No record of the SOL transport connection in the file: MDLSOLT kept at', &
-                      & MDLSOLT
-              end if
-           else
-              write(6,'(A,2F6.3)') ' ## No record of PROFD2C, PROFD2W in the file: kept at', PROFD2C, PROFD2W
-           end if
-        else
-           write(6,'(A,3F4.1)') ' ## No record of FSTPTM in the file: FSTPTM kept at', FSTPTM(1:NSM)
-        end if
+  ! The extension (tx_savext): every input and state added after the base layout, by name.
+  ! A file of the base layout only (before the extension records) ends here; a file of a
+  ! development build of BR-43 to BR-51 has its extension records 1-7 here, which are not
+  ! read.  Items not in the file keep their current values (reported by xreport).
+  call xclear
+  read(io,iostat=istx) ifirst
+  if( istx < 0 ) then
+     write(6,'(A)') ' ## The file has the base layout only (written before the extension records)'
+  else if( istx == 0 .and. ifirst == EXTSENT ) then
+     backspace(io)
+     read(io,iostat=istx) ifirst, exttag_file, iextver, nitem
+     if( istx == 0 .and. exttag_file == EXTTAG ) then
+        call xread_items(io, nitem, istx)
+        if( istx /= 0 ) write(6,'(A)') &
+             & ' ## WARNING: the extension of the file ends early; the items read before are used'
+        if( iextver > EXTVER ) write(6,'(A,I3,A,I3,A)') ' ## The extension of the file is of version', &
+             & iextver, ' (this build:', EXTVER, '); the items are taken by name'
      else
-        write(6,'(A,3F6.3)') ' ## No record of the main-wall recycling in the file: RWALL, RWALLZ, RWALLIZ kept at', &
-             & RWALL, RWALLZ, RWALLIZ
+        write(6,'(A)') ' ## WARNING: the extension of the file is not readable; it is not read'
      end if
+  else if( istx == 0 .and. ifirst >= 1 .and. ifirst <= 7 ) then
+     write(6,'(A)') ' ## The file has the extension records 1-7 of a development build (BR-43 to BR-51);' &
+          & //' they are not read'
   else
-     write(6,'(A,I2)') ' ## No extension record in the file (older format): MDLNSUP kept at', MDLNSUP
+     write(6,'(A)') ' ## WARNING: the records after the base layout of the file are not recognized; not read'
   end if
+  xmode = XM_READ
+  call savext_items
+  xmode = 0
+  call xreport
+  etb_loaded = xhas('FCOEFETB') .and. xhas('ETBHELD')
   if( .not. etb_loaded ) then
-     ! A file before version 6: the ETB factor from the step count of the run that
-     ! wrote it, as TXCALV forms it (held if that run reached its last step).  A
+     ! A file without the ETB factor: from the step count of the run that wrote it, as
+     ! TXCALV forms it (held if that run reached its last step).  A
      ! factor held by an earlier run of a run that then stopped early (NT < NTMAX)
      ! cannot be told from the file and comes out unheld.
      ETBheld = NTMAX > 0 .and. NT >= NTMAX
