@@ -3789,7 +3789,8 @@ parameter & V5.52 & V5.60 & meaning \\\hline
 \texttt{FLlim}   & --  & 0.25 & limiter factor $\alpha$ (C$^0$; $D_{01}$ with \texttt{MDLN0FL} = 1, 2) \\
 \texttt{RLXN0}   & --  & 0.5 & neutral-only relaxation (legacy \texttt{MDLN0FL} = 1 only) \\
 \texttt{NANDER}  & (0) & $-20$ & Anderson acceleration of the Picard sweeps \\
-\texttt{MDLRCY}  & (0) & 1 & target recycling of the net SOL loss only (Sec.~\ref{sec:mdlrcy}) \\\hline
+\texttt{MDLRCY}  & (0) & 1 & target recycling of the net SOL loss only (Sec.~\ref{sec:mdlrcy}) \\
+\texttt{MDLNCA}  & ($-1$) & 0 & a step not converged in \texttt{ICMAX} sweeps by the sign of \texttt{EPS} \\\hline
 \end{tabular}
 \end{center}
 
@@ -3945,18 +3946,20 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   run gives the number and share of retaken steps and the finest substep, and warns when more
   than 10\% of the steps were retaken (a smaller base $\Delta t$ is then the right fix) or when
   steps did not converge even at $\Delta t/2^{\texttt{NRETRY}}$.
-\item \texttt{MDLNCA} (2026-10-13; default $-1$): what becomes of a (sub)step that has not converged in
-  \texttt{ICMAX} sweeps at the finest size \texttt{NRETRY} allows.  The sign of \texttt{EPS} gave both
-  the tolerance $|\texttt{EPS}|$ and this rule, and the rule was not applied alike:
+\item \texttt{MDLNCA} (2026-10-13; default 0 since 2026-10-14, $-1$ before): what becomes of a
+  (sub)step that has not converged in \texttt{ICMAX} sweeps at the finest size \texttt{NRETRY}
+  allows.  The sign of \texttt{EPS} gave both the tolerance $|\texttt{EPS}|$ and this rule, and the
+  rule was not applied alike:
   \begin{center}
   \begin{tabular}{|c|l|}\hline
   \texttt{MDLNCA} & a (sub)step not converged at the finest size \\\hline
-  $-1$ & the original rule (default): accepted with \texttt{EPS} $>0$ and \texttt{MODECV} = 0; the run \\
-       & stopped with \texttt{EPS} $<0$, and with \texttt{MODECV} $\ne 0$ for either sign; a substep \\
-       & before the last one of a retried step accepted in every case \\
-  0 & by the sign of \texttt{EPS} alone, for every (sub)step and either \texttt{MODECV} \\
-  1 & accepted \\
-  2 & the run stopped: no (sub)step is accepted without convergence \\\hline
+  0 & the default: by the sign of \texttt{EPS} alone, for every (sub)step and either \texttt{MODECV} \\
+    & (accepted with \texttt{EPS} $>0$, the run stopped with \texttt{EPS} $<0$) \\
+  1 & accepted, whatever the sign of \texttt{EPS} \\
+  2 & the run stopped: no (sub)step is accepted without convergence (strict runs) \\
+  $-1$ & the rule before 2026-10-14, kept for compatibility: accepted with \texttt{EPS} $>0$ and \\
+       & \texttt{MODECV} = 0; the run stopped with \texttt{EPS} $<0$, and with \texttt{MODECV} $\ne 0$ \\
+       & for either sign; a substep before the last one of a retried step accepted in every case \\\hline
   \end{tabular}
   \end{center}
   An accepted one is reported (``accepted at IC = ICMAX'', the step line marked ``*'', the number
@@ -3965,18 +3968,25 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   writes the state of the step before, bit for bit as a run stopped there, and a \texttt{CONT} with
   \texttt{MDLNCA} = 1 continues bit for bit as a run with 1 from the start).  With $-1$ a step that
   converges exactly at the sweep \texttt{ICMAX} counts as not converged, as before, and
-  \texttt{NRETRY} takes it again; with 0--2 it is converged.  $-1$ leaves every run bit for bit as
-  it was; 2 is the strict setting for runs whose every step must converge.  Where every step converges
-  the setting does not matter: with standard NBI (\texttt{NRMAX} = 60 to 1\,s, 120 to 0.5\,s, 240 to
-  0.4\,s, $\Delta t = 10^{-4}$\,s, either sign of \texttt{EPS} and either \texttt{MODECV}) $-1$, 0 and 2
-  give the same results bit for bit, and no step converged exactly at the sweep \texttt{ICMAX}.  With
+  \texttt{NRETRY} takes it again; with 0--2 it is converged.  \texttt{parm/txparm.v552default} sets
+  $-1$.  The default 0 changes a run only in three situations, none of them in the standard inputs:
+  (a) \texttt{EPS} $<0$ with \texttt{NRETRY} $>0$: a substep before the last one of a retried step
+  that does not converge stops the run (with $-1$ it was accepted, with a warning); (b)
+  \texttt{MODECV} $\ne 0$ with \texttt{EPS} $>0$: a (sub)step not converged is accepted (with $-1$ it
+  stopped the run); (c) \texttt{NRETRY} $>0$ and a step, or a substep coarser than the finest size,
+  that converges exactly at the sweep \texttt{ICMAX}: it is not taken again.  \texttt{LOAD} takes
+  \texttt{MDLNCA} from a file that has it (written since 2026-10-14), so a file written with the
+  former default continues with $-1$ unless \texttt{MDLNCA} is set after the \texttt{LOAD}; a file
+  without it takes the value of the input.  Where every step converges the setting does not matter:
+  with standard NBI (\texttt{NRMAX} = 60 to 1\,s, 120 to 0.5\,s, 240 to 0.4\,s,
+  $\Delta t = 10^{-4}$\,s, either sign of \texttt{EPS} and either \texttt{MODECV}) $-1$, 0 and 2 give
+  the same results bit for bit, and no step converged exactly at the sweep \texttt{ICMAX}.  With
   6.4\,MW of NBI and the offsets 0.1 (\texttt{NRMAX} = 60) 85 steps are accepted without convergence
   (the slow neutrals at the wall, increments up to 254 \texttt{EPS}): 0 is bit for bit $-1$ there,
-  2 stops at 0.282\,s; with \texttt{EPS} $<0$, $-1$ accepts one substep more and stops one step later
-  than 0; with \texttt{MODECV} = 1, $-1$ stops at 0.282\,s and 0 runs to 0.7\,s.
-  With \texttt{EPS} $>0$ and \texttt{MODECV} = 0 the two differ only when a step, or a substep
-  coarser than the finest size, converges exactly at the sweep \texttt{ICMAX} ($-1$ takes it again);
-  at the finest size both accept it as converged.  Where the axis mode below stalls many steps
+  2 stops at 0.282\,s; with \texttt{EPS} $<0$ (case (a)), $-1$ accepts one substep more and stops one
+  step later than 0; with \texttt{MODECV} = 1 (case (b)), $-1$ stops at 0.282\,s and 0 runs to 0.7\,s
+  (the same with the default 0 since 2026-10-14 and with $-1$ set, bit for bit as before).
+  Case (c) was not met in any run: where the axis mode below stalls many steps
   (6.4\,MW, the offsets 0.1, \texttt{NRMAX} = 240, from the state at 0.4\,s to 0.475\,s,
   $\Delta t = 2.5\times10^{-5}$\,s, \texttt{EPS} = $10^{-6}$, \texttt{NRETRY} = 1; 3000 steps) 1150
   steps are retaken (every step at 0.442--0.462\,s, every other one after), and none had converged at the sweep
@@ -4363,8 +4373,8 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   0.6\,s), at 0.036\,s against 0.348\,s with 6.4\,MW at 120, and at 0.452\,s against none up to
   1.2\,s with \texttt{FSCBSH} = 2 at 60.
   $-40$ takes as many sweeps as $-20$ and more time.  An input that sets \texttt{NANDER} is not
-  affected; \texttt{NANDER} is not in the save file, so a run continued from a file takes the
-  \texttt{NANDER} of its input.  \texttt{parm/txparm.v552default} sets \texttt{NANDER} = 0.
+  affected; a file written since 2026-10-14 keeps \texttt{NANDER} (Section~\ref{sec:savefile}), and a
+  run continued from an older file takes the \texttt{NANDER} of its input.  \texttt{parm/txparm.v552default} sets \texttt{NANDER} = 0.
 \item \texttt{LOAD} of a file with another \texttt{NRMAX} in the same process.  The arrays were
   kept when already allocated, so such a file (for example one of \texttt{NRMAX} = 120 after a run at
   60) was read into arrays of the old size and the program stopped in the spline of the mesh.  They
@@ -4380,7 +4390,7 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   cases, so after a converged step every later step was taken after one sweep, and with
   \texttt{EPS} $< 0$ a converged step went on to \texttt{ICMAX} and failed; it now converges in 7--19
   sweeps per step like the default test.  (The L2 test still stops a step at \texttt{ICMAX} whatever
-  the sign of \texttt{EPS} with the default \texttt{MDLNCA} = $-1$; 0 with \texttt{EPS} $>0$, or 1,
+  the sign of \texttt{EPS} with \texttt{MDLNCA} = $-1$; the default 0 with \texttt{EPS} $>0$, or 1,
   accepts it.)
 \item \texttt{MDLRCY} (2026-10-13): the target recycling of the SOL loss into the
   neutrals only where it is a net loss (Sec.~\ref{sec:mdlrcy}); introduced as an option with the
