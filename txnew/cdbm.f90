@@ -143,10 +143,12 @@ CONTAINS
 ! *** Form factor in CDBM model, with the alpha = 0 crossing smoothed ***
 !
 !   trcofs picks MAX(fs1,fs2) on either side of alpha = 0 with the two branches
-!   evaluated from shear -+ alpha, so the form factor is only C0 there.  Inside
-!   |alpha| <= alpha_thres the two one-sided limits are joined by a sigmoid,
-!   which removes the kink without touching the model anywhere else.  Ported
-!   from GOTRESS/TRESS, where it is the branch the standard cases use.
+!   evaluated from shear -+ alpha (sa = shear - alpha for alpha >= 0, alpha - shear
+!   below), so at alpha = 0 the form factor jumps from fs(-shear) to fs(shear)
+!   unless shear = 0.  Inside |alpha| <= alpha_thres the values of the two
+!   branches at alpha = -+alpha_thres are joined by a sigmoid, which makes it
+!   continuous without touching the model anywhere else.  Ported from
+!   GOTRESS/TRESS, where it is the branch the standard cases use.
 
   real(8) function trcofs_sig(shear,alpha,curv)
 
@@ -160,8 +162,11 @@ CONTAINS
     if( abs(alpha) <= alpha_thres ) then
        fs2_bndl = 0.0_dp
        fs2_bndr = 0.0_dp
-       ! --- fs1_bndl: alpha < 0 ---
-       sa = alpha_thres - shear
+       ! --- fs1_bndl: alpha < 0, the branch alpha - shear at alpha = -alpha_thres ---
+       !   (alpha_thres - shear, used up to 2026-10-15, is not that value: fs jumped
+       !   by fs(-alpha_thres - shear) - fs(alpha_thres - shear) at alpha = -alpha_thres,
+       !   2% at shear = -0.024, and the Picard iteration stalled on the jump)
+       sa = - alpha_thres - shear
        if( sa >= 0.0_dp ) then
           fs1_bndl = fs_a(sa)
        else
@@ -172,7 +177,7 @@ CONTAINS
 
        fs_bndl = max(fs1_bndl,fs2_bndl)
 
-       ! --- fs_bndr: alpha > 0 ---
+       ! --- fs_bndr: alpha > 0, the branch shear - alpha at alpha = alpha_thres ---
        sa = shear - alpha_thres
        if( sa >= 0.0_dp ) then 
           fs1_bndr = fs_a(sa)
