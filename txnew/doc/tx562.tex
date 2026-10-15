@@ -4055,7 +4055,10 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   ($\Delta t = 10^{-4}$ s, \texttt{EPS} = $10^{-6}$) the run reaches 0.9\,s, retrying 0.07, 1.6 and 12\% of the
   steps in 0--0.3, 0.3--0.6 and 0.6--0.9\,s and accepting 9 substeps without convergence: 4 at
   \texttt{LQz8} on the axis (1--4 \texttt{EPS}) and 5 at \texttt{LQm2} next to the wall (50--1200
-  \texttt{EPS}).  The continuum solution is regular.
+  \texttt{EPS}).  From the state at 0.6\,s, \texttt{NRETRY} = 2 or \texttt{ICMAX} = 400 accept none (with
+  400 no step is retaken, at 11\% less CPU time than 100), and the state at 0.9\,s changes by less than
+  $7\times10^{-7}$ in the densities and pressures and $10^{-9}$ next to the wall, as much as a restart.
+  The continuum solution is regular.
   With 6.4 MW, the offsets 0.1 and \texttt{NRMAX} = 240 ($\Delta t = 2.5\times10^{-5}$ s,
   \texttt{EPS} = $10^{-6}$, from the state at 0.44\,s) a step needs 105--136 sweeps: with
   \texttt{ICMAX} = 100, 95\% of the steps from 0.44 to 0.46\,s were retaken, each after a failed step,
@@ -4064,11 +4067,24 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   time from 0.44 to 0.46\,s (2700 against 5400\,s) and 10\% less from 0.46 to 0.475\,s.  The two runs
   differ by $2.5\times10^{-5}$ of the maxima in the densities and $3.5\times10^{-5}$ in the pressures
   (the retried run takes most steps as two of $\Delta t/2$), against $3.6\times10^{-3}$ between
-  \texttt{NRMAX} = 120 and 240 at 0.4\,s.  These are differences of the step size: the runs with
-  \texttt{EPS} = $10^{-6}$ are within $2\times10^{-7}$ of runs with $10^{-7}$ and \texttt{ICMAX} = 1000, whose
-  densities change by $2.7\times10^{-5}$ from $\Delta t$ to $\Delta t/2$ and by $1.6\times10^{-5}$ from
-  $\Delta t/2$ to $\Delta t/4$ (not yet the ratio 4 of second order), and the 26 substeps accepted
-  without convergence change them by less than $10^{-5}$.  Where the steps need a few more sweeps than
+  \texttt{NRMAX} = 120 and 240 at 0.4\,s.  The runs with \texttt{EPS} = $10^{-6}$ are within
+  $2\times10^{-7}$ of runs with $10^{-7}$ and \texttt{ICMAX} = 1000, whose densities change by
+  $2.7\times10^{-5}$ from $\Delta t$ to $\Delta t/2$ and by $1.6\times10^{-5}$ from $\Delta t/2$ to
+  $\Delta t/4$, all of it on the first ten nodes (elsewhere $10^{-8}$--$10^{-7}$).  These are not errors
+  of the time integration but of the lag of the pressure that CDBM takes with \texttt{iprestab} = 1, the
+  mean of the pressure of the sweep and of the one fixed at the sweep \texttt{ICCALC} = 2 (that of the
+  first Picard iterate, which near the axis is far from the converged one here): with
+  \texttt{ICCALC} = 1000, where the fixed pressure follows the sweeps and the mean becomes the pressure
+  itself, or with \texttt{iprestab} = 0, the densities change by $9\times10^{-8}$ from $\Delta t$ to
+  $\Delta t/2$ and by about a quarter of that from $\Delta t/2$ to $\Delta t/4$ (second order,
+  0.44--0.4404\,s),
+  and the runs with \texttt{ICCALC} = 2 lie $3.7$, $2.2$, $2.2$, $1.4\times10^{-5}$ from them on the axis at
+  $\Delta t$, $\Delta t/2$, $\Delta t/4$, $\Delta t/8$ ($4.8\times10^{-5}$ at 0.46\,s with $\Delta t$).  The
+  other quantities fixed at \texttt{ICCALC} (\texttt{SCX}, the neoclassical factors, $E_r$) change them by
+  $1$--$2\times10^{-8}$, the size of the iteration error.  Where the time accuracy near the axis matters
+  with CDBM, \texttt{ICCALC} $\ge$ \texttt{ICMAX} removes the lag at 2--4\% more CPU time in this case;
+  the defaults are kept.  The 26
+  substeps accepted without convergence change the densities by less than $10^{-5}$.  Where the steps need a few more sweeps than
   \texttt{ICMAX}, a larger \texttt{ICMAX} (150--200) is cheaper than the retries.  \texttt{NRETRY} = 2
   accepted none of the 26 from 0.46 to 0.475\,s (at 6\% more CPU time) but 2 of the 3 from 0.44 to
   0.46\,s.
@@ -4214,6 +4230,21 @@ extension of Section~\ref{sec:savefile}, which carries the same inputs and state
   times that of the next node.  Fixed transport is unchanged.  With CDBM and 3.2\,MW NBI the
   profiles change by less than $4\times10^{-5}$ at 1\,s ($u_{\r{i}\phi}(0)$ by $-0.04$\%) with
   \texttt{NRMAX} = 60 and by less than $5\times10^{-7}$ with 120 ($-0.003$\%).
+\item Form factor of CDBM near $\alpha = 0$ (2026-10-15).  The form factor is taken with $s - \alpha$ for
+  $\alpha \ge 0$ and $\alpha - s$ below, so it jumps at $\alpha = 0$ unless $s = 0$; inside
+  $|\alpha| \le 5\times10^{-3}$ a sigmoid joins the values of the two branches at $\alpha = \mp5\times10^{-3}$.
+  The value used for $-5\times10^{-3}$ was that of the branch $\alpha - s$ at $+5\times10^{-3}$, so the form
+  factor jumped there by about 2\% (1.6--2.6\% for $|s| \le 0.3$).  With 6.4\,MW, the offsets 0.1 and \texttt{NRMAX} =
+  240, $\alpha$ of the fifth node came to $-5\times10^{-3}$ at 0.4414\,s, where the Picard map had no fixed
+  point: the increment stayed at $5\times10^{-4}$ in 1000 or 3000 sweeps (also with \texttt{MDLPCK} = 3)
+  and substeps were accepted without convergence at every $\Delta t$.  The end is now that of its own
+  branch and the form factor is continuous; that step converges in 44 sweeps and the substeps accepted
+  at 0.4413--0.4416\,s are gone.  Without CDBM and outside $|\alpha| \le 5\times10^{-3}$ nothing changes;
+  in the standard CDBM cases the densities and pressures change by less than $10^{-7}$ (50 steps) and
+  $10^{-8}$ (\texttt{FSCBSH} = 2, 1.2\,s), and with 6.4\,MW and \texttt{NRMAX} = 240 by $1$--$2\times10^{-5}$
+  on the axis.  The failure of CDBM alone
+  at 6.4\,MW (below) is not this: it comes at 0.3444 and 0.3447\,s with \texttt{NRMAX} = 120 before and
+  after the change.
 \item CDBM alone at high NBI power.  With \texttt{FSANOM} only (no \texttt{FSDFIX}, no offsets) the
   anomalous $D$, $\chi$ and $\mu$ are those of CDBM, proportional to $|\alpha|^{3/2}$, and vanish
   where the pressure gradient does.  With 6.4\,MW of NBI on the test case the thermal ions are
