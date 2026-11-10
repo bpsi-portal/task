@@ -4,7 +4,6 @@ MODULE wrparm
 
   PRIVATE
   PUBLIC wr_parm
-  PUBLIC wr_chek
 
 CONTAINS
 
@@ -12,7 +11,7 @@ CONTAINS
 
   SUBROUTINE WR_PARM(MODE,KIN,IERR)
 
-!     MODE=0 : standard namelinst input
+!     MODE=0 : standard namelist input
 !     MODE=1 : namelist file input
 !     MODE=2 : namelist line input
 
@@ -27,6 +26,9 @@ CONTAINS
 !     IERR=10X : input parameter out of range
 
     USE dpparm,ONLY: dp_chek
+    USE dpcomm,ONLY: nsamax_dp
+!    USE wrcomm,ONLY: nsamax_wr,nsmax
+    USE wrcomm
     USE libkio
     IMPLICIT NONE
     INTEGER,INTENT(IN):: MODE
@@ -35,13 +37,14 @@ CONTAINS
     EXTERNAL EQCHEK
 
     IERR=0
-
 1   CALL TASK_PARM(MODE,'WR',KIN,WRNLIN,WRPLST,IERR)
     IF(IERR.NE.0) RETURN
 
     CALl EQCHEK(IERR)
+    IF(MODE.EQ.0.AND.IERR.NE.0) GOTO 1
+    IF(NSAMAX_WR.GT.NSMAX) NSAMAX_WR=NSMAX
+    NSAMAX_DP=NSAMAX_WR
     CALl DP_CHEK(IERR)
-    CALl WR_CHEK(IERR)
     IF(MODE.EQ.0.AND.IERR.NE.0) GOTO 1
 
     RETURN
@@ -59,28 +62,29 @@ CONTAINS
 
     NAMELIST /WR/ RR,RA,RB,RKAP,RDLT,BB,Q0,QA,RIP,PROFJ, &
                   NSMAX,PA,PZ,PN,PNS,PTPR,PTPP,PTS,PU,PUS,PZCL, &
+                  PNM,PTM,PUM,PROFN3,PROFT3,PROFU3,model_eqdsk_psi, &
                   r_corner,z_corner, &
                   br_corner,bz_corner,bt_corner, &
                   pn_corner,ptpr_corner,ptpp_corner, &
                   PROFN1,PROFN2,PROFT1,PROFT2,PROFU1,PROFU2, &
                   RHOMIN,QMIN,RHOITB,PNITB,PTITB,PUITB,RHOEDG, &
                   PPN0,PTN0,RF_PL, &
-                  MODELG,model_prof,MODELQ,MODEL_PROF,MODEL_NPROF, &
+                  MODELG,model_prof,MODELQ,model_coll,MODEL_PROF,MODEL_NPROF, &
+                  model_eqdsk_psi, &
                   RHOGMN,RHOGMX, &
                   KNAMEQ,KNAMWR,KNAMFP,KNAMFO,KNAMEQ2, &
                   MODEFW,MODEFR,IDEBUG, &
-                  MODELP,MODELV,NCMIN,NCMAX,NS_NSA_DP,PMAX_DP,EMAX_DP, &
-                  RF,RPI,ZPI,PHII,RNZI,RNPHII,RKR0,MODEW,UUI, &
-                  RCURVA,RCURVB,RBRADA,RBRADB, &
-                  RFIN,RPIN,ZPIN,PHIIN,RNZIN,RNPHIIN,RKRIN,MODEWIN,UUIN, &
-                  ANGZIN,ANGPHIN,RCURVAIN,RCURVBIN,RBRADAIN,RBRADBIN, &
+                  MODELP,MODELV,NCMIN,NCMAX,PMAX_DP,EMAX_DP, &
+                  RFIN,RPIN,ZPIN,PHIIN,RNPHIN,MODEWIN,RNKIN,UUIN, &
+                  ANGTIN,ANGPIN,RCURVAIN,RCURVBIN,RBRADAIN,RBRADBIN, &
                   NRAYMAX,NSTPMAX,NRSMAX,NRLMAX,LMAXNW, &
-                  NPMAX_DP,NTHMAX_DP,NRMAX_DP, &
+                  NPMAX_DP,NTHMAX_DP,NRMAX_DP,NSAMAX_WR,NS_NSA_WR,nsa_grf, &
                   MDLWRI,MDLWRG,MDLWRP,MDLWRQ,MDLWRW,nres_max,nres_type, &
-                  mode_wline, &
-                  SMAX,DELS,UUMIN,EPSRAY,DELRAY,DELDER,DELKR,EPSNW, &
+                  model_fdrv,model_fdrv_ds,mode_wline,mode_fig, &
+                  SMAX,DELS,UUMIN,EPSRAY,DELRAY,DELDER,DELKR,EPSNW,EPSD0, &
                   mode_beam,pne_threshold,bdr_threshold, &
-                  Rmax_wr,Rmin_wr,Zmax_wr,Zmin_wr
+                  Rmax_wr,Rmin_wr,Zmax_wr,Zmin_wr,ra_wr,idebug_wr,KNAMWRW, &
+                  knam_profm_TOTAL,knam_profg_TOTAL
 
     READ(NID,WR,IOSTAT=IST,ERR=9800,END=9900)
     
@@ -117,70 +121,23 @@ CONTAINS
              9X,'pn_corner,ptpr_corner,ptpp_corner,'/ &
              9X,'RHOMIN,QMIN,RHOITB,PNITB,PTITB,PUITB,RHOEDG,'/ &
              9X,'PPN0,PTN0,RFCL,'/ &
-             9X,'MODELG,model_prof,MODELQ,MODEL_PROF,MODEL_NPROF,'/ &
+             9X,'MODELG,model_prof,MODELQ,model_coll,MODEL_PROF,MODEL_NPROF,'/ &
+             9X,'model_eqdsk_psi,'/ &
              9X,'RHOGMN,RHOGMX,'/ &
              9X,'KNAMEQ,KNAMWR,KNAMFP,KNAMFO,KNAMEQ2'/ &
              9X,'MODEFW,MODEFR,IDEBUG'/ &
-             9X,'MODELP,MODELV,NCMIN,NCMAX,NS_NSA_DP,PMAX_DP,EMAX_DP,'/ &
-             9X,'RF,RPI,ZPI,PHII,RNZI,RNPHII,RKR0,MODEW,UUI,'/ &
-             9X,'RCURVA,RCURVB,RBRADA,RBRADB,'/ &
-             9X,'RFIN,RPIN,ZPIN,PHIIN,RNZIN,RNPHIIN,RKR0IN,MODEWIN,UUIN,'/ &
-             9X,'ANGZIN,ANGPHIN,RCURVAIN,RCURVBIN,RBRADAIN,RBRADBIN,'/ &
+             9X,'MODELP,MODELV,NCMIN,NCMAX,PMAX_DP,EMAX_DP,'/ &
+             9X,'RFIN,RPIN,ZPIN,PHIIN,RNPHIN,MODEWIN,RNKIN,UUIN,'/ &
+             9X,'ANGTIN,ANGPIN,RCURVAIN,RCURVBIN,RBRADAIN,RBRADBIN,'/ &
              9X,'NRAYMAX,NSTPMAX,NRSMAX,NRLMAX,LMAXNW,'/ &
-             9X,'NPMAX_DP,NTHMAX_DP,NRMAX_DP,'/ &
+             9X,'NPMAX_DP,NTHMAX_DP,NRMAX_DP,NSAMAX_WR,NS_NSA_WR,nsa_grf'/ &
              9X,'MDLWRI,MDLWRG,MDLWRP,MDLWRQ,MDLWRW,nres_max,nres_type,'/ &
-             9X,'SMAX,DELS,UUMIN,EPSRAY,DELRAY,DELDER,DELKR,EPSNW'/ &
-             9X,'mode_beam,pne_threshold,bdr_thershold,mode_wline'/ &
-             9X,'Rmax_wr,Rmin_wr,Zmax_wr,Zmin_wr')
+             9X,'model_fdrv,model_fdrv_ds,mode_wline,mode_fig,'/ &
+             9X,'SMAX,DELS,UUMIN,EPSRAY,DELRAY,DELDER,DELKR,EPSNW,EPSD0,'/ &
+             9X,'mode_beam,pne_threshold,bdr_thershold'/ &
+             9X,'Rmax_wr,Rmin_wr,Zmax_wr,Zmin_wr,ra_wr,idebug_wr'/ &
+             9X,'knam_profm_TOTAL,knam_profg_TOTAL'/ &
+             9X,'KNAMWRW')
   END SUBROUTINE WRPLST
 
-!     ***** CHECK INPUT PARAMETERS *****
-
-  SUBROUTINE WR_CHEK(IERR)
-
-    USE wrcomm_parm
-    USE equnit
-    IMPLICIT NONE
-    INTEGER,INTENT(OUT):: IERR
-    CHARACTER(LEN=80):: LINE
-    INTEGER,SAVE:: INITEQ=0
-    EXTERNAL EQCALQ,EQGETB
-
-    IERR=0
-
-    IF(MODELG.EQ.3.OR.MODELG.EQ.5) THEN
-       IF(INITEQ.EQ.0) THEN
-          CALL eq_load(MODELG,KNAMEQ,IERR)
-          IF(IERR.EQ.0) THEN
-             WRITE(LINE,'(A,I5)') 'NRMAX =',51
-             CALL eq_parm(2,LINE,IERR)
-             WRITE(LINE,'(A,I5)') 'NTHMAX=',64
-             CALL eq_parm(2,LINE,IERR)
-             WRITE(LINE,'(A,I5)') 'NSUMAX=',64
-             CALL eq_parm(2,LINE,IERR)
-             CALL EQCALQ(IERR)
-             CALL EQGETB(BB,RR,RIP,RA,RKAP,RDLT,RB)
-             INITEQ=1
-          ELSE
-             WRITE(6,*) 'XX EQLOAD: IERR=',IERR
-             INITEQ=0
-          ENDIF
-       ENDIF
-    ELSE IF(MODELG.EQ.8) THEN
-       IF(INITEQ.EQ.0) THEN
-          CALL eq_read(IERR)
-          IF(IERR.EQ.0) THEN
-             CALL EQGETB(BB,RR,RIP,RA,RKAP,RDLT,RB)
-             INITEQ=1
-          ELSE
-             WRITE(6,*) 'XX EQREAD: IERR=',IERR
-             INITEQ=0
-          ENDIF
-       ENDIF
-    ELSE
-       INITEQ=0
-    ENDIF
-
-    RETURN
-  END SUBROUTINE WR_CHEK
 END MODULE wrparm

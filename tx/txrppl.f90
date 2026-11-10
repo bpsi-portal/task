@@ -13,7 +13,7 @@ contains
 !
 !   Toroidal ripple effects
 !
-!     Input  (real*8) : dQdr   (0:NRMAX) : r-derivative of the safety factor
+!     Input  (real*8) : dQdrho (0:NRMAX) : rho-derivative of the safety factor
 !     Output (real*8) : rNubrp1(0:NRMAX) : defraction frequency
 !                       rNubrp2(0:NRMAX) : defraction frequency
 !                       Ubrp   (0:NRMAX) : convective velocity due to grad B drift
@@ -21,32 +21,41 @@ contains
 !
 !**********************************************************************************
 
-  subroutine ripple_effect(dQdr)
+  subroutine ripple_effect(dQdrho)
 
+    use libell, only : ellfc, ellec
     use tx_commons
     use tx_interface, only : fgaussian
-    use libell,only : ellfc, ellec
-    USE libitp
-    real(8), dimension(0:NRMAX), intent(in) :: dQdr
+    use libitp, only: aitken2p
+
+    real(8), dimension(0:NRMAX), intent(in) :: dQdrho
 
     integer(4) :: NR, IER, i, imax, irip, nr_potato
-    real(8) :: thetab, sinthb, RL, ellE, ellK, EpsL, theta1, theta2, dlt, &
+    real(8) :: thetab, sinthb, rhol, ellE, ellK, EpsL, theta1, theta2, dlt, &
          &     width0, width1, dltwidth, ARC, diff_min, theta_min, &
-         &     rhob, rNueff, rNubnc, DRP, Dltcr, DltR, Vdrift, Rpotato
+         &     rhobl, rNueff, rNubnc, DRP, Dltcr, DltR, Vdrift, Rpotato, dQdrL
 !!    real(8) :: sum_rp, DltRP_ave, DCB, Dlteff
     real(8), dimension(0:NRMAX) :: th1, th2
 !!rp_conv         &                         ,PNbrpL, DERIV
 !!rp_conv    real(8), dimension(1:4,0:NRMAX) :: U
 
-    if(allocated(DltRP_rim) .EQV. .FALSE.) allocate(DltRP_rim(0:NRMAX),theta_rim(0:NRMAX))
+    if( allocated(DltRP_rim) ) then
+       ! NRMAX changed (a RUN or a LOAD with another NRMAX)
+       if( size(DltRP_rim) /= NRMAX + 1 ) deallocate(DltRP_rim,theta_rim)
+    end if
+    if( allocated(DltRP_rim) ) then
+       ! NRMAX changed (a RUN or a LOAD with another NRMAX)
+       if( size(DltRP_rim) /= NRMAX + 1 ) deallocate(DltRP_rim,theta_rim)
+    end if
+    if( .not. allocated(DltRP_rim) ) allocate(DltRP_rim(0:NRMAX),theta_rim(0:NRMAX))
 
     ! Ripple amplitude
     thetab = 0.5D0 * PI ! pitch angle of a typical banana particle
     sinthb = sin(thetab)
     if(IRPIN == 0) then
        DO NR = 0, NRMAX
-          RL = R(NR) * (1.D0 + (kappa - 1.D0) * sin(thetab))
-          DltRP(NR) = ripple(RL,thetab,FSRP) ! Ripple amplitude at banana tip point
+          rhol = rho(NR) * (1.D0 + (kappa - 1.D0) * sin(thetab))
+          DltRP(NR) = ripple(rhol,thetab,FSRP) ! Ripple amplitude at banana tip point
                                              ! Mainly use for estimation of diffusive processes
        END DO
     end if
@@ -87,8 +96,7 @@ contains
 
        ! Ripple well region, i.e. area where "width0 - width1 > 0".
        DO NR = 1, NRMAX
-          RL = R(NR)
-          EpsL = RL / RR
+          EpsL = epst(NR)
 
           ! ===== Calculation of ripple field and ripple well region =====
           if(IRPIN == 0) then
@@ -107,8 +115,8 @@ contains
                    exit
                 end if
                 theta1 = theta1 + PI * dlt
-                RL = R(NR) * (1.D0 + (kappa - 1.D0) * sin(theta1))
-                width0 = ripple(RL,theta1,FSRP)
+                rhol = rho(NR) * (1.D0 + (kappa - 1.D0) * sin(theta1))
+                width0 = ripple(rhol,theta1,FSRP)
                 width1 = EpsL * sin(theta1) / (NTCOIL * Q(NR))
                 ! Poloidal angle at which the difference between width0 and width1 is minimized.
                 dltwidth = abs(width0 - width1)
@@ -148,8 +156,8 @@ contains
                    exit
                 end if
                 theta2 = theta2 - PI * dlt
-                RL = R(NR) * (1.D0 + (kappa - 1.D0) * sin(theta2))
-                width0 = ripple(RL,theta2,FSRP)
+                rhol = rho(NR) * (1.D0 + (kappa - 1.D0) * sin(theta2))
+                width0 = ripple(rhol,theta2,FSRP)
                 width1 = EpsL * sin(theta2) / (NTCOIL * Q(NR))
                 dltwidth = abs(width0 - width1)
                 if(i == 1 .or. dltwidth < diff_min) then
@@ -176,8 +184,8 @@ contains
 !!rpl_ave          dlt = 1.d0 / (imax - 1)
 !!rpl_ave          do i = 1, imax
 !!rpl_ave             theta = (i - 1) * PI * dlt
-!!rpl_ave             RL = R(NR) * (1.D0 + (kappa - 1.D0) * sin(theta))
-!!rpl_ave             sum_rp = sum_rp + ripple(RL,theta,FSRP)**2
+!!rpl_ave             rhol = rho(NR) * (1.D0 + (kappa - 1.D0) * sin(theta))
+!!rpl_ave             sum_rp = sum_rp + ripple(rhol,theta,FSRP)**2
 !!rpl_ave          end do
 !!rpl_ave          DltRP_ave = sqrt(sum_rp/imax)
 
@@ -200,27 +208,29 @@ contains
 !!rpl_ave          rNubrp2(NR) = rNubrp1(NR) * SQRT(DltRP_ave)
 
           ! Convectitve loss (vertical grad B drift velocity)
-          Vdrift = 0.5D0 * AMb * Vb**2 / (PZ * AEE * RR * SQRT(BphV(NR)**2 + BthV(NR)**2))
+          Vdrift = 0.5D0 * amb * amqp * Vb**2 / (achgb * RR * SQRT(BphV(NR)**2 + BthV(NR)**2))
 !          RUbrp(NR)=(NTCOIL*Q(NR)*RR*DltRP(NR))*Vdrift
-!          if(nr/=0) Ubrp(NR)=(NTCOIL*Q(NR)*RR*DltRP(NR))/R(NR)*Vdrift
+!          if(nr/=0) Ubrp(NR)=(NTCOIL*Q(NR)*RR*DltRP(NR))/rpt(NR)*Vdrift
           RUbrp(NR)=(NTCOIL*Q(NR)*RR*DltRP_rim(nr))*Vdrift
-          if(nr/=0) Ubrp(NR)=(NTCOIL*Q(NR)*RR*DltRP_rim(nr))/R(NR)*Vdrift
+          if(nr/=0) Ubrp(NR)=(NTCOIL*Q(NR)*RR*DltRP_rim(nr))/rpt(NR)*Vdrift
 !!$          Ubrp(NR) = 0.5D0 * Vdrift
 !!$            &  * (theta1*sin(theta1) + (PI - theta2)*sin(theta2)) / (PI + theta1 - theta2))
 !!$          IF(NR == NRMAX) THEN
 !!$             rNubL(NR) = rNubL(NR-1)
 !!$          ELSE
-!!$             rNubL(NR) = Ubrp(NR) / SQRT(RB**2 - R(NR)**2)
+!!$             rNubL(NR) = Ubrp(NR) / SQRT(RB**2 - rpt(NR)**2)
 !!$          END IF
-!!$          rNubL(NR) = Ubrp(NR) / (R(NR) * sin(theta1))
+!!$          rNubL(NR) = Ubrp(NR) / (rpt(NR) * sin(theta1))
 !          if(nr >=5) stop
        END DO
-!!$       RV0 = AITKEN2P(R(0),r(1)*(pi-th2(1)),r(1)*th1(1),r(2)*th1(2),-R(1),R(1),R(2))
+!!$       RV0 = AITKEN2P(rpt(0),rpt(1)*(pi-th2(1)),r(1)*th1(1),r(2)*th1(2),-rpt(1),rpt(1),rpt(2))
 !!$       rNubL(0) = Ubrp(0) / RV0
-       Ubrp(0) = AITKEN2P(R(0),Ubrp(1),Ubrp(2),Ubrp(3),R(1),R(2),R(3))
+       Ubrp(0) = AITKEN2P(rpt(0),Ubrp(1),Ubrp(2),Ubrp(3),rpt(1),rpt(2),rpt(3))
        ! On the axis ripple amplitude is uniquely defined because of no poloidal variation.
        rNubrp1(0) = rNuD(0) / DltRP(0)
-       rNubrp2(0) = rNubrp1(0) * SQRT(DltRP(0))
+       ! rNubrp2 carries the poloidal weight fgaussian(theta_rim) of the rim, which the
+       ! axis does not have; extrapolate it as Ubrp(0) and Dbrp(0) are.
+       rNubrp2(0) = AITKEN2P(rpt(0),rNubrp2(1),rNubrp2(2),rNubrp2(3),rpt(1),rpt(2),rpt(3))
 
        ! Save for graphic
        if(IRPIN == 0) then
@@ -230,7 +240,7 @@ contains
 
 !!rp_conv       CALL SPL1D(R,PNbrpV,DERIV,U,NRMAX+1,0,IER)
 !!rp_conv       do nr = 0, nrmax
-!!rp_conv          if(R(NR) <= RB * cos(th1(nr))) then
+!!rp_conv          if(rho(NR) <= rhob * cos(th1(nr))) then
 !!rp_conv             tmp = r(nr)*cos(th1(nr))
 !!rp_conv             call wherenr(r,tmp,nrl,Left,Right)
 !!rp_conv             CALL SPL1DF(tmp,PNbrpL(NR),R,U,NRMAX+1,IER)!
@@ -256,14 +266,14 @@ contains
           Dbrp(0:NRMAX) = 0.D0
        ELSE
        do nr = 1, nrmax
-          RL = R(NR)
-          EpsL = RL / RR
+          EpsL = epst(NR)
+          dQdrL = dQdrho(NR) * drhodr(NR)
 
-          ! rhob : Larmor radius of beam ions
-          rhob = AMb * Vb / (PZ * AEE * SQRT(BphV(NR)**2 + BthV(NR)**2))
+          ! rhobl : Larmor radius of beam ions
+          rhobl = amb * amqp * Vb / (achgb * SQRT(BphV(NR)**2 + BthV(NR)**2))
           ! DltR : Step size of banana particles
-!          DltR = SQRT(PI * NTCOIL * (Q(NR) / EpsL)**3 * DltRP(NR)**2 * rhob**2)
-          DltR = rhob*DltRP(NR)*SQRT(PI*NTCOIL*Q(nr)**3)*ABS(sinthb) &
+!          DltR = SQRT(PI * NTCOIL * (Q(NR) / EpsL)**3 * DltRP(NR)**2 * rhobl**2)
+          DltR = rhobl*DltRP(NR)*SQRT(PI*NTCOIL*Q(nr)**3)*ABS(sinthb) &
                & /((NTCOIL*Q(NR)*DltRP(NR))**1.5D0+(EpsL*ABS(sinthb))**1.5D0)
 
           ! effective collisional frequency (G. Park et al., PoP 10 (2003) 4004, eq.(6))
@@ -271,11 +281,11 @@ contains
           rNueff = 8.D0 * Q(NR)**2 * NTCOIL**2 * rNuD(NR) / (EpsL * sinthb**2) &
                & * (ellE/ellK - cos(0.5d0*thetab)**2)
           ! rNubnc : bounce frequency of beam ions (Helander and Sigmar, p132 eq.(7.27))
-!          rNubnc = SQRT(EpsL) * Vb / (10.5D0 * Q(NR) * (RR + R(NR))) ! for thetab=0.5*PI
+!          rNubnc = SQRT(EpsL) * Vb / (10.5D0 * Q(NR) * (RR + rpt(NR))) ! for thetab=0.5*PI
           rNubnc = SQRT(EpsL) * Vb / (4.D0 * SQRT(2.D0) * ellK * Q(NR) * RR)
 !!$          ! DCB : confined banana diffusion coefficient
 !!$          ! (V. Ya Goloborod'ko, et al., Physica Scripta T16 (1987) 46)
-!!$          DCB = NTCOIL**2.25D0*Q(NR)**3.25D0*RR*rhob*DltRP(NR)**1.5d0*rNuD(NR)/EpsL**2.5D0
+!!$          DCB = NTCOIL**2.25D0*Q(NR)**3.25D0*RR*rhobl*DltRP(NR)**1.5d0*rNuD(NR)/EpsL**2.5D0
           ! DRP : ripple-plateau diffusion coefficient
           DRP = rNubnc * DltR**2
 
@@ -286,12 +296,12 @@ contains
 !!$             Dbrp(NR) = DRP
 !!$          end if
 !!$!          Dbrp(NR) = DCB * DRP / (DCB + DRP)
-          Dbrp(NR) = DRP/SQRT(1.D0+(rNubnc/rNueff*DltR*NTCOIL*dQdr(NR))**2)
+          Dbrp(NR) = DRP/SQRT(1.D0+(rNubnc/rNueff*DltR*NTCOIL*dQdrL)**2)
 
           ! Dltcr : GWB criterion of stochastic diffusion at banana tip point
-!          Dltcr = (EpsL / (PI * NTCOIL * Q(NR)))**1.5D0 / (rhob * dQdr(NR))
-          Dltcr = DltRP(NR) / (DltR * NTCOIL * (2.D0 * thetab * dQdr(NR) &
-          &     + 2.D0 * Q(NR) / R(NR) * cos(thetab) / sinthb))
+!          Dltcr = (EpsL / (PI * NTCOIL * Q(NR)))**1.5D0 / (rhobl * dQdrL)
+          Dltcr = DltRP(NR) / (DltR * NTCOIL * (2.D0 * thetab * dQdrL &
+          &     + 2.D0 * Q(NR) / rpt(NR) * cos(thetab) / sinthb))
 !!$          ! Fraction of stochastic region occupied in a flux surface
 !!$          theta1 = 0.d0
 !!$          i = 0
@@ -299,8 +309,8 @@ contains
 !!$          ist = -1
 !!$          do
 !!$             i = i + 1
-!!$             RL = R(NR) * (1.D0 + (kappa - 1.D0) * sin(theta1))
-!!$             if(ripple(RL,theta1,fsrp) > Dltcr) ist = ist + 1
+!!$             rhol = rho(NR) * (1.D0 + (kappa - 1.D0) * sin(theta1))
+!!$             if(ripple(rhol,theta1,fsrp) > Dltcr) ist = ist + 1
 !!$             theta1 = theta1 + PI * dlt
 !!$             if(i == imax) exit
 !!$          end do
@@ -308,19 +318,19 @@ contains
 !!$          ! equivalent to that of ripple-plateau diffusion)
 !!$          if (DltRP(NR) > Dltcr) then
 !!$             ! facST : Fraction of stochastic region in a flux surface
-!!$             facST = dble(ist) / dble(imax - 1)
+!!$             facST = real(ist,8) / (imax - 1)
 !!$             Dbrp(NR) = DRP * facST + Dbrp(NR) * (1.d0 - facST)
 !!$          end if
           if (DltRP(NR) > Dltcr) Dbrp(NR) = DRP
 
 !!$          ! Old version for display and comparison
-!!$          DRP = rNubnc * PI * NTCOIL * (Q(NR) / EpsL)**3 * DltRP(NR)**2 * rhob**2
-!!$          DCB = NTCOIL**2.25D0*Q(NR)**3.25D0*RR*rhob*DltRP(NR)**1.5d0*rNuD(NR)/EpsL**2.5D0
+!!$          DRP = rNubnc * PI * NTCOIL * (Q(NR) / EpsL)**3 * DltRP(NR)**2 * rhobl**2
+!!$          DCB = NTCOIL**2.25D0*Q(NR)**3.25D0*RR*rhobl*DltRP(NR)**1.5d0*rNuD(NR)/EpsL**2.5D0
 !!$          Dbrp(NR) = DCB * DRP / (DCB + DRP)
 !!$          if(DltRP(NR) > Dltcr) Dbrp(NR) = DRP
-!!$          write(6,*) r(nr)/ra,ft(NR)*rip_rat(NR)*Dbrp(NR)
+!!$          write(6,*) rho(nr),ft(NR)*rip_rat(NR)*Dbrp(NR)
        end do
-       Dbrp(0) = AITKEN2P(R(0),Dbrp(1),Dbrp(2),Dbrp(3),R(1),R(2),R(3))
+       Dbrp(0) = AITKEN2P(rpt(0),Dbrp(1),Dbrp(2),Dbrp(3),rpt(1),rpt(2),rpt(3))
 
        ! Potato orbit effect
        !   Approaching to the magnetic axis, we reach the point where the banana
@@ -328,8 +338,8 @@ contains
        !   Inside the point, the particle orbit is no longer changed.
        do nr = 0, nrmax
           ! potato width (Helander and Sigmar, p133)
-          Rpotato = (Q(NR)**2*(AMb * Vb / (PZ * AEE * BphV(NR)))**2*RR)**(1.D0/3.D0)
-          if(r(nr) > Rpotato) then
+          Rpotato = (Q(NR)**2*(amb * amqp * Vb / (achgb * BphV(NR)))**2*RR)**(1.D0/3.D0)
+          if(rpt(nr) > Rpotato) then
              nr_potato = nr - 1
              exit
           end if
@@ -355,38 +365,30 @@ contains
 !
 !***************************************************************
 
-  real(8) function ripple(RL,theta,FSRP) result(f)
-    use tx_commons, only : RR, NTCOIL, DltRPn, RA
-    use libbes, only : besinx
-    real(8), intent(in) :: RL, theta, FSRP
-    real(8) :: a, L0, Rmag0 = 2.4D0 ! specific value for JT-60U
+  real(8) function ripple(rhol,theta,FSRP) result(f)
+    use libbes, only : BESINX
+    use tx_commons, only : RR, NTCOIL, DltRPn, RDltRPn, ra
+    real(8), intent(in) :: rhol, theta, FSRP
+    real(8) :: a, L0, rl
+    real(8), save :: rsave = -1.d0, rinv
 
     if(FSRP /= 0.D0) then
-       L0 = RR - Rmag0
-       a = sqrt((RL**2+L0**2+2.D0*RL*L0*cos(theta))*(RR-L0)/(RR+RL*cos(theta)))
-       f = DltRPn * BESINX(0,NTCOIL/(RR-L0)*a)
+       ! N / R_delta_min, formed as a product with a reciprocal kept across calls
+       if(RDltRPn /= rsave) then
+          rsave = RDltRPn
+          rinv  = 1.d0 / RDltRPn
+       end if
+       rl = rhol * ra
+       L0 = RR - RDltRPn
+       a = sqrt((RL**2+L0**2+2.D0*RL*L0*cos(theta))*RDltRPn/(RR+RL*cos(theta)))
+       f = DltRPn * BESINX(0,NTCOIL*rinv*a)
     else
        f = 0.d0
     end if
 
   end function ripple
 
-!!$  real(8) function ripple(NR,theta,FSRP) result(f)
-!!$    use tx_commons, only : RR, R, RA, NTCOIL
-!!$    integer(4), intent(in) :: NR
-!!$    real(8), intent(in) :: theta, FSRP
-!!$    real(8) :: DIN = 0.2D0, DltRP0 = 0.015D0
-!!$
-!!$    if(FSRP /= 0.D0) then
-!!$       f = DltRP0 * (       ((RR + R(NR) * cos(theta)) / (RR + RA))**(NTCOIL-1) &
-!!$            &        + DIN *((RR - RA) / (RR + R(NR) * cos(theta)))**(NTCOIL+1))
-!!$    else
-!!$       f = 0.D0
-!!$    end if
-!!$       
-!!$  end function ripple
-
-!!rp_conv  ! Search minimum radial number NR satisfying R(NR) > X.
+!!rp_conv  ! Search minimum radial number NR satisfying rpt(NR) > X.
 !!rp_conv
 !!rp_conv  subroutine wherenr(R,X,NR,Left,Right)
 !!rp_conv    real(8), dimension(0:NRMAX), intent(in) :: R
@@ -421,7 +423,8 @@ contains
 
   subroutine ripple_input(ier)
 
-    USE libfio
+    use libfio, only : fropen
+    
     integer(4) :: ier, nrpin, ist, nrpmax, n, i, j
     character(len=130) :: kline
 
@@ -444,7 +447,7 @@ contains
        read(nrpin,'(I4,6E15.7)',iostat=ist) j, RHOL(i), DltRP_rimL(i), theta_rimL(i), &
             &                                  rip_ratL(i), DltRPL(i), DltRP_midL(i)
        if(ist /= 0) return
-!!$       write(6,'(I4,1P6E15.7)') i,RHOL(i), DltRP_rimL(i), theta_rimL(i), &
+!!$       write(6,'(I4,6ES15.7)') i,RHOL(i), DltRP_rimL(i), theta_rimL(i), &
 !!$            &                                  rip_ratL(i), DltRPL(i), DltRP_midL(i)
     end do
 
@@ -463,9 +466,9 @@ contains
   subroutine ripple_spl
 
     use tx_commons, only : NRA, Rho, rip_rat, DltRP, DltRP_mid, DltRPn, NRMAX
+    use libitp, only: aitken,deriv4
+    use libspl1d, only : spl1d,spl1df
 
-    USE libspl1d
-    USE libitp
     integer(4) :: nr, ier, N
     real(8), dimension(:), allocatable :: DERIV
     real(8), dimension(:,:), allocatable :: U
@@ -473,7 +476,11 @@ contains
     N = N_RPIN
 
     allocate(DERIV(1:N),U(1:4,1:N)) 
-    if(allocated(DltRP_rim) .EQV. .FALSE.) allocate(DltRP_rim(0:NRMAX),theta_rim(0:NRMAX))
+    if( allocated(DltRP_rim) ) then
+       ! NRMAX changed (a RUN or a LOAD with another NRMAX)
+       if( size(DltRP_rim) /= NRMAX + 1 ) deallocate(DltRP_rim,theta_rim)
+    end if
+    if( .not. allocated(DltRP_rim) ) allocate(DltRP_rim(0:NRMAX),theta_rim(0:NRMAX))
 
     !   *** Interpolation ***
 
@@ -538,7 +545,7 @@ contains
     end do
 
 !!$    do nr = 0, nrmax
-!!$       write(6,'(I4,1P5E15.7)') nr,Rho(nr), DltRP_rim(nr), theta_rim(nr), &
+!!$       write(6,'(I4,5ES15.7)') nr,Rho(nr), DltRP_rim(nr), theta_rim(nr), &
 !!$            &                                  rip_rat(nr), DltRP(nr)       
 !!$    end do
 !!$    stop

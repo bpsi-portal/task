@@ -1,191 +1,239 @@
+module tx_menu
+  implicit none
+  private
+  public :: TXMENU
+
+contains
+
 !***************************************************************
 !
 !   Command loop
 !
 !***************************************************************
 
-SUBROUTINE TXMENU
+  subroutine TXMENU
 
-  use tx_commons, only : allocate_txcomm, deallocate_txcomm, &
-       &              rMU0, IERR, PNBH, rMUb1, rMUb2, TMAX, DT, NTMAX, T_TX, PNBHT1, &
-       &              PNBHT2, PNBHP, PNBHex, X, LQm4, NRMAX, TPRE, NGR, RB, PNBCD, &
-       &              GT, GY, NGRM, NGYRM, R, iflag_file, MDLMOM, &
-       &              DelRho, DelN, Rho, LQe1, LQi1, PZ, ICONT, IRPIN
-  use tx_main, only : TXEXEC
-  use tx_graphic, only : TX_GRAPH_SAVE, TXSTGR, TXGOUT
-  use tx_variables, only : TXCALV
-  use tx_parameter_control, only : TXPARM_CHECK, TXPARM, TXVIEW
-  use tx_interface, only : TXLOAD
-  use tx_ripple, only : ripple_input, ripple_spl, deallocate_ripple
-  USE libchar,ONLY: toupper
-  implicit none
-  INTEGER(4) :: MODE, I, IST, ier, NR, IER_RP
-  character(len=80) :: LINE
-  character(len=1)  :: KID, KID2
+    use tx_commons, only : allocate_txcomm, deallocate_txcomm, &
+         &              rMU0, IERR, rMUb1, rMUb2, TMAX, DT, NTMAX, NT, NTCUM, T_TX, FcoefETB, ETBheld, PNBHT1, &
+         &              PNBHT2, PNBHP, PNBHex, X, XOLD, LQm4, NRMAX, TPRE, PNBCD, &
+         &              iflag_file, &
+         &              DelRho, DelN, Rho, LQe1, LQi1, LQz1, achg, ICONT, IRPIN, array_init_NR, stdin_ended
+    use tx_init, only : TXINIT, TXPROF
+    use tx_main, only : TXEXEC
+    use tx_graphic, only : TX_GRAPH_SAVE, TXSTGR, TXGOUT, allocate_txgraf, deallocate_txgraf, &
+         &                 NGR, NGRM, GT, GY
+    use tx_variables, only : TXCALV
+    use tx_parameter_control, only : TXPARM_CHECK, TXPARM, TXVIEW
+    use tx_interface, only : TOUPPER, TXLOAD, TXEXTCHK
+    use tx_ripple, only : ripple_input, ripple_spl, deallocate_ripple
+    use tx_ntv, only : dealloc_ntv
+    use eqread_mod, only : alloc_equ
+    use mod_cross_section, only : deallocate_spline_table_carbon_rate_coef_adas, &
+         deallocate_spline_table_beam_rate_coef
+    implicit none
+    integer(4) :: MODE, I, IST, ier, NR, IER_RP
+    character(len=80) :: LINE
+    character(len=1)  :: KID, KID2
 
-  IERR  = 0
-  ICONT = 0
-  IRPIN = 0 ! Read ripple file if IRPIN /= 0
-  IF((PNBHP + PNBHT1 + PNBHT2 + PNBHex) /= 0) THEN
-     rMUb1 = 1.D0
-     rMUb2 = rMU0
-  END IF
+    IERR  = 0
+    ICONT = 0
+    IRPIN = 0 ! Read ripple file if IRPIN /= 0
+    if((PNBHP + PNBHT1 + PNBHT2 + PNBHex) /= 0) then
+       rMUb1 = 1.D0
+       rMUb2 = rMU0
+    end if
 
-  !  *** MENU ***
+    !  *** MENU ***
 
-  DO
-     ier = 0
-     IF(ICONT == 0) TMAX = DT*NTMAX
+    do
+       ier = 0
+       if(ICONT == 0) TMAX = DT*NTMAX
 
-     WRITE(6,'(3(A,1PD12.4))') &
-          &   ' ## TIME=',T_TX,'  DT=',DT,'  NEXT TIME =',TMAX
-     WRITE(6,*) '## INPUT: ', &
-          &   'R:RUN  C:CONT  P,V:PARM  G:GRAPH  '// &
-          &   'W:STAT  S:SAVE  L:LOAD  I:INIT '
-     WRITE(6,'(11X,A)') 'F,FR:FILE  N:PTRB  M:ITG  O:OUT  Q:QUIT'
-     CALL GUFLSH
+       write(6,'(3(A,ES12.4))') &
+            &   ' ## TIME=',T_TX,'  DT=',DT,'  NEXT TIME =',TMAX
+       write(6,*) '## INPUT: ', &
+            &   'R:RUN  C:CONT  P,V:PARM  G:GRAPH  '// &
+            &   'W:STAT  S:SAVE  L:LOAD  I:INIT '
+       write(6,'(11X,A)') 'F,FR:FILE  N:PTRB  M:ITG  O:OUT  Q:QUIT'
+       flush(6)
 
-     CALL TXKLIN(LINE,KID,MODE)
-     IF(MODE /= 1) THEN
-        CALL TXPARM_CHECK
-        TMAX=T_TX+DT*NTMAX
-        IF(rMUb1 == rMU0 .and. &
-        & (PNBHT1 /= 0.D0 .OR. PNBHT2 /= 0.D0 .OR. PNBHP /= 0.D0 .OR. PNBHex /= 0.D0)) THEN
-           rMUb1 = 1.D0
-           rMUb2 = rMU0
-           if(allocated(X)) X(LQm4,0:NRMAX) = X(LQm4,0:NRMAX) / rMUb2
-        END IF
-        CYCLE
-     END IF
+       call TXKLIN(LINE,KID,MODE)
+       if(MODE /= 1) then
+          call TXPARM_CHECK
+          TMAX=T_TX+DT*NTMAX
+          if(rMUb1 == rMU0 .and. &
+               & (PNBHT1 /= 0.D0 .or. PNBHT2 /= 0.D0 .or. PNBHP /= 0.D0 .or. PNBHex /= 0.D0)) then
+             rMUb1 = 1.D0
+             rMUb2 = rMU0
+             if(allocated(X)) X(0:NRMAX,LQm4) = X(0:NRMAX,LQm4) / rMUb2
+             if(allocated(XOLD)) XOLD(0:NRMAX,LQm4) = XOLD(0:NRMAX,LQm4) / rMUb2
+          end if
+          cycle
+       end if
 
-     SELECT CASE(KID)
-     CASE('R')
-        IF (ICONT /= 0) THEN
-           WRITE(6,*) '# Would you like to restart? [y/N]'
-           READ(5,'(A1)',IOSTAT=IST) KID
-           IF(IST /= 0) CYCLE
-           CALL TOUPPER(KID)
-           IF(KID /= 'Y') CYCLE
-        END IF
-        call allocate_txcomm(ier, icont)
-        if(ier /= 0) cycle
-        T_TX = 0.D0
-        TPRE = 0.D0
-        IERR = 0
-        ICONT = 1
-        CALL TXPROF
-        CALL TX_GRAPH_SAVE
-        if(IRPIN /= 0) CALL ripple_spl
-        CALL TXEXEC
-        TMAX=T_TX+DT*NTMAX
-     CASE('C')
-        IF (ICONT == 0) THEN
-           WRITE(6,*) 'XX RUN or LOAD before CONTINUE !'
-           CYCLE
-        END IF
-        NGR=-1
-        CALL TXSTGR(NGR,GT,GY,NRMAX,NGRM,NGYRM)
-        if(IRPIN /= 0) CALL ripple_spl
-        CALL TXEXEC
-        TMAX=T_TX+DT*NTMAX
-     CASE('P')
-        CALL TXPARM(KID)
-        IF(KID == 'Q') EXIT
-     CASE('V')
-        CALL TXVIEW
-     CASE('I')
-        CALL TXINIT
-     CASE('Q')
-        EXIT
-     CASE('W')
-        IF (ICONT == 0) THEN
-           WRITE(6,*) 'XX RUN or LOAD before CONTINUE !'
-           CYCLE
-        END IF
-        CALL TXSTAT
-     CASE('S')
-        CALL TXSAVE
-     CASE('L')
-        CALL TXLOAD(IER)
-        IF(IER /= 0) CYCLE
-        IERR = 0
-        NGR = -1
-        ICONT = 1
-        CALL TX_GRAPH_SAVE
-     CASE('G')
-        CALL TXGOUT
-     CASE('N')
-        IF (ICONT == 0) THEN
-           WRITE(6,*) 'XX RUN or LOAD before CONTINUE !'
-           CYCLE
-        END IF
-        DO NR = 0, NRMAX-1
-           IF(Rho(NR) <= DelRho .AND. Rho(NR+1) >= DelRho) THEN
-              I = NR
-              EXIT
-           END IF
-        END DO
-        X(LQe1,I) = X(LQe1,I) + DelN
-        X(LQi1,I) = X(LQi1,I) + DelN * PZ
-        CALL TXCALV(X)
-     CASE('B')
-        KID2=LINE(2:2)
-        CALL TOUPPER(KID2)
-        SELECT CASE(KID2)
-        CASE('P')
-           PNBCD =  1.D0
-        CASE('0')
-           PNBCD =  0.D0
-        CASE('M')
-           PNBCD = -1.D0
-        CASE DEFAULT
-           WRITE(6,*) 'XX Unknown beam command'
-        END SELECT
-     CASE('F')
-        KID2=LINE(2:2)
-        CALL TOUPPER(KID2)
-        SELECT CASE(KID2)
-        CASE('R')
-           CALL ripple_input(IER_RP)
-           if(IER_RP == 0) IRPIN = 1
-        CASE DEFAULT
-           CALL ascii_input
+       select case(KID)
+       case('R')
+          if (ICONT /= 0) then
+             write(6,*) '# Would you like to restart? [y/N]'
+             if(stdin_ended) exit
+             read(5,'(A1)',iostat=IST) KID
+             if(IST < 0) stdin_ended = .true.
+             if(IST /= 0) cycle
+             call TOUPPER(KID)
+             if(KID /= 'Y') cycle
+          end if
+          call allocate_txcomm(ier, icont)
+          call allocate_txgraf(ier, icont)
+          if(ier /= 0) cycle
+          T_TX = 0.D0
+          TPRE = 0.D0
+          ! A RUN starts at step 0 (NT is read in TXPROF, by the ETB factor), and the
+          ! ETB factor ramps down again from 1.  NTCUM counts the steps of the run
+          ! through CONT, SAVE and LOAD (a record only, not used in the calculation).
+          NT = 0
+          NTCUM = 0
+          FcoefETB = 1.d0
+          ETBheld = .false.
+          IERR = 0
+          ICONT = 1
+          call TXEXTCHK(0)
+          call TXPROF
+          call TX_GRAPH_SAVE
+          if(IRPIN /= 0) call ripple_spl
+          call TXEXEC
+          TMAX=T_TX+DT*NTMAX
+       case('C')
+          if (ICONT == 0) then
+             write(6,*) 'XX RUN or LOAD before CONTINUE !'
+             cycle
+          end if
+          ! the external data (F) against those of the file loaded last, if F came after it
+          call TXEXTCHK(2)
+          NGR=-1
+          call TXSTGR(NGR,GT,GY,NGRM)
+          if(IRPIN /= 0) call ripple_spl
+          call TXEXEC
+          TMAX=T_TX+DT*NTMAX
+       case('P')
+          call TXPARM(KID)
+          if(KID == 'Q') exit
+          ! the same checks, and the same PNsSUP(2:3) of MDLNSUP = 1, as for the
+          ! parameter file and a namelist typed at the prompt
+          call TXPARM_CHECK
+       case('V')
+          call TXVIEW
+       case('I')
+          call TXINIT
+       case('Q')
+          exit
+       case('W')
+          if (ICONT == 0) then
+             write(6,*) 'XX RUN or LOAD before CONTINUE !'
+             cycle
+          end if
+          call TXSTAT
+       case('S')
+          call TXSAVE
+       case('L')
+          call TXLOAD(IER)
+          if(IER /= 0) cycle
+          IERR = 0
+          NGR = -1
+          ICONT = 1
+          call TX_GRAPH_SAVE
+          ! TXLOAD sets psi in the form of the file.  The beam data read by F (OFMC, PNBHex) stay
+          ! in the process and are not in the file, so with them the form is taken to that of a
+          ! beam here, as at F and at any parameter input; else F before and after LOAD would
+          ! run in different forms (the same solution, other rounding).  The two-step BDF history
+          ! XOLD is in the form of X and goes with it, here and at the other two points.
+          if(rMUb1 == rMU0 .and. &
+               & (PNBHT1 /= 0.D0 .or. PNBHT2 /= 0.D0 .or. PNBHP /= 0.D0 .or. PNBHex /= 0.D0)) then
+             rMUb1 = 1.D0
+             rMUb2 = rMU0
+             X(0:NRMAX,LQm4) = X(0:NRMAX,LQm4) / rMUb2
+             XOLD(0:NRMAX,LQm4) = XOLD(0:NRMAX,LQm4) / rMUb2
+          end if
+       case('G')
+          call TXGOUT
+       case('N')
+          if (ICONT == 0) then
+             write(6,*) 'XX RUN or LOAD before CONTINUE !'
+             cycle
+          end if
+          do NR = 0, NRMAX-1
+             if(Rho(NR) <= DelRho  .and.  Rho(NR+1) >= DelRho) then
+                I = NR
+                exit
+             end if
+          end do
+          X(I,LQe1) = X(I,LQe1) + DelN
+          X(I,LQi1) = X(I,LQi1) + DelN * achg(2)
+          X(I,LQz1) = X(I,LQz1) + DelN * achg(3)
+          call TXCALV(X)
+       case('B')
+          KID2=LINE(2:2)
+          call TOUPPER(KID2)
+          select case(KID2)
+          case('P')
+             PNBCD =  1.D0
+          case('0')
+             PNBCD =  0.D0
+          case('M')
+             PNBCD = -1.D0
+          case default
+             write(6,*) 'XX Unknown beam command'
+          end select
+       case('F')
+          KID2=LINE(2:2)
+          call TOUPPER(KID2)
+          select case(KID2)
+          case('R')
+             call ripple_input(IER_RP)
+             if(IER_RP == 0) IRPIN = 1
+          case default
+             call ascii_input
 
-           if(iflag_file == 1) then
-              MDLMOM = 1
-              if(rMUb2 == 1.D0) then
-                 rMUb1 = 1.D0
-                 rMUb2 = rMU0
+             if(iflag_file == 1) then
+                if(rMUb2 == 1.D0) then
+                   rMUb1 = 1.D0
+                   rMUb2 = rMU0
 
-                 if(allocated(X)) X(LQm4,0:NRMAX) = X(LQm4,0:NRMAX) / rMUb2
-                 IF(T_TX /= 0.D0) CALL TXCALV(X)
-              end if
-           end if
-        END SELECT
-     CASE('O')
-        IF (ICONT == 0) THEN
-           WRITE(6,*) 'XX RUN or LOAD before CONTINUE !'
-           CYCLE
-        END IF
-        CALL outfile
-     CASE('M')
-        IF (ICONT == 0) THEN
-           WRITE(6,*) 'XX RUN or LOAD before CONTINUE !'
-           CYCLE
-        END IF
-        CALL ITG_growthrate
-     CASE('#')
-        CONTINUE
-     CASE DEFAULT
-        WRITE(6,*) 'XX Unknown command'
-     END SELECT
-  END DO
+                   if(allocated(X)) X(0:NRMAX,LQm4) = X(0:NRMAX,LQm4) / rMUb2
+                   if(allocated(XOLD)) XOLD(0:NRMAX,LQm4) = XOLD(0:NRMAX,LQm4) / rMUb2
+                   if(T_TX /= 0.D0) call TXCALV(X)
+                end if
+             end if
+          end select
+       case('O')
+          if (ICONT == 0) then
+             write(6,*) 'XX RUN or LOAD before CONTINUE !'
+             cycle
+          end if
+          call outfile
+       case('M')
+          if (ICONT == 0) then
+             write(6,*) 'XX RUN or LOAD before CONTINUE !'
+             cycle
+          end if
+          call ITG_growthrate
+       case('#')
+          continue
+       case default
+          write(6,*) 'XX Unknown command'
+       end select
+    end do
 
-  call deallocate_ripple
-  if(allocated(r)) call deallocate_txcomm
+    ! *** deallocate dynamic arrays before termination ***
 
-  RETURN
-END SUBROUTINE TXMENU
+    call deallocate_ripple
+    call deallocate_spline_table_carbon_rate_coef_adas
+    call deallocate_spline_table_beam_rate_coef
+    call dealloc_ntv
+    call deallocate_txcomm
+    call deallocate_txgraf
+    call alloc_equ(-1)
+
+  end subroutine TXMENU
 
 !***** INPUT KID or LINE *****
 !           MODE=0: LINE INPUT 
@@ -193,64 +241,73 @@ END SUBROUTINE TXMENU
 !                2: PARM INPUT
 !                3: NEW PROMPT
 
-SUBROUTINE TXKLIN(LINE,KID,MODE)
+  subroutine TXKLIN(LINE,KID,MODE)
 
-  use tx_parameter_control, only : TXPARL
-  use libchar
-  implicit none
+    use tx_commons, only : stdin_ended
+    use tx_parameter_control, only : TXPARL
+    use tx_interface, only : TOUPPER
+    implicit none
 
-  integer(4), intent(out) :: MODE
-  character(len=80), intent(out) :: LINE
-  character(len=1), intent(out) :: KID
-  integer(4) :: ID, I, IST
+    integer(4), intent(out) :: MODE
+    character(len=80), intent(out) :: LINE
+    character(len=1), intent(out) :: KID
+    integer(4) :: ID, I, IST
 
-  !  ----- read line input input -----
+    !  ----- read line input input -----
 
-  READ(5,'(A80)',IOSTAT=IST) LINE
+    if(stdin_ended) then
+       KID='Q'
+       MODE=1
+       return
+    end if
 
-  IF(IST == 0) THEN
-     !  ----- parameter input -----
+    read(5,'(A80)',iostat=IST) LINE
 
-     ID=0
-     DO I=1,80
-        IF(LINE(I:I) == '=') ID=1
-     END DO
-     IF(ID == 1) THEN
-        CALL TXPARL(LINE)
-        KID=' '
-        MODE=2
-        RETURN
-     END IF
+    if(IST == 0) then
+       !  ----- parameter input -----
 
-     !  ----- command input -----
+       ID=0
+       do I=1,80
+          if(LINE(I:I) == '=') ID=1
+       end do
+       if(ID == 1) then
+          call TXPARL(LINE)
+          KID=' '
+          MODE=2
+          return
+       end if
 
-     KID=LINE(1:1)
-     CALL TOUPPER(KID)
-     IF(KID >= 'A'.AND.KID <= 'Z') THEN
-        MODE=1
-        RETURN
-     END IF
+       !  ----- command input -----
 
-     !  ----- line input -----
+       KID=LINE(1:1)
+       call TOUPPER(KID)
+       if(KID >= 'A' .and. KID <= 'Z') then
+          MODE=1
+          return
+       end if
 
-     KID=' '
-     MODE=0
+       !  ----- line input -----
 
-  ELSE IF(IST < 0) THEN
+       KID=' '
+       MODE=0
 
-     !  ----- input end -----
+    else if(IST < 0) then
 
-     KID='Q'
-     MODE=1
+       !  ----- input end -----
 
-  ELSE IF(IST > 0) THEN
+       stdin_ended = .true.
+       KID='Q'
+       MODE=1
 
-     !  ----- input error -----
+    else if(IST > 0) then
 
-     WRITE(6,*) 'XX INPUT ERROR !'
-     MODE=3
+       !  ----- input error -----
 
-  END IF
+       write(6,*) 'XX INPUT ERROR !'
+       MODE=3
 
-  RETURN
-END SUBROUTINE TXKLIN
+    end if
+
+  end subroutine TXKLIN
+
+end module tx_menu

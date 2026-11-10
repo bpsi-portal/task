@@ -1,10 +1,9 @@
-!*************************** Sauter model ******************************
-
+!*************************** Sauter models *****************************
 module sauter_mod
+  use tx_commons, only : aee
   implicit none
-  real(8), parameter :: AEE  = 1.602176487D-19 ! elementary charge
   private
-  public :: SAUTER
+  public :: sauter, redl_sauter
 
 contains
 
@@ -12,179 +11,354 @@ contains
 !
 !       Sauter model
 !
+!   [1] O. Sauter et al., PoP 6, 2834 (1999).
+!   [2] O. Sauter et al., PoP 9, 5140 (2002).
+!
 !***********************************************************************
   
-  SUBROUTINE SAUTER(NE,TE,DTE,DPE_IN,NI,TI,DTI,DPI_IN, &
-       &            Q,BB,DPSI,IPSI,EPS,RR,ZI,ZEFF,FT,rlnLei_IN,rlnLii_IN,NUE_IN,NUI_IN, &
-       &            JBS,ETA,JBSB,ETAS)
+  subroutine sauter(ispc,den,tem,dtem,dpres,zz &
+                   ,qval,dpsi,Ipsi,EPS,RR,Zeff,ftrap &
+                   ,rlnLei_IN,rlnLii_IN,NUE_IN,NUI_IN &
+                   ,BJBS,ETA,ETAS)
 
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-!     Programmed by HONDA Mitsuru (2007/05/24, 2010/04/07 modified)
+!     Programmed by HONDA Mitsuru (2007/05/24; 2010/04/07, 2024/07/26 modified)
 !     
 !     Note that all the parameters are on the GRID point.
 !     "rho" denotes the radial coordinate and whether or not it is dimensionless
-!        does not matter. It only requires that derivatives are consistent to DPSI.
+!        does not matter. It only requires that derivatives are consistent to dpsi.
 !
 !     *** INPUT VARIABLES ***
-!     NE    : electron density [10^20/m^3]
-!     TE    : electron temperature [keV]
-!     DTE   : partial derivative of electron temperature to rho [keV/rho]
-!     DPE   : partial derivative of electron pressure to rho [10^20 kev/m^3/rho]
-!     NI    : ion density [10^20/m^3]
-!     TI    : ion temperature [keV]
-!     DTI   : partial derivative of ion temperature to rho [keV/rho]
-!     DPI   : partial derivative of ion pressure to rho [10^20 kev/m^3/rho]
-!     Q     : safety factor
-!     BB    : toloidal magnetic field [T]
-!     DPSI  : partial derivative of poloidal flux to rho [Wb/rho]
-!     IPSI  : magnetic flux function, i.e. the product of major radius
+!     den   : electron density for all species [10^20/m^3]
+!     tem   : electron temperature for all species [keV]
+!     dtem  : partial derivative of temperature to rho for all species [keV/rho]
+!     dpres : partial derivative of pressure to rho for all species [10^20 kev/m^3/rho]
+!     zz    : charge number for all species
+! 
+!     qval  : safety factor
+!     dpsi  : partial derivative of poloidal flux to rho [Wb/rho]
+!     Ipsi  : magnetic flux function, i.e. the product of major radius
 !             and toroidal magnetic field (RR*BT) [mT]
 !     EPS   : local inverse aspect ratio
 !     RR    : major radius [m]
-!     ZI    : charge number of bulk ion
-!     ZEFF  : effective charge number
-!     FT    : trapped particle fraction
+!     Zeff  : effective charge number
+!     ftrap : trapped particle fraction
+!
+!     -- not recommended ---
 !     rlnLei: Coulomb logarithm for electron collisions,   optional
 !     rlnLii: Coulomb logarithm for ion collisions,        optional
 !     NUE   : Normalized collisionality for electrons,     optional
 !     NUI   : Normalized collisionality for ions,          optional
+!     ----------------------
 !
 !     *** OUTPUT VARIABLES ***
-!     JBS   : bootstrap current [A/m^2]
-!     JBSB  : bootstrap parallel current <J . B> [AT/m^2], optional
+!     BJBS  : bootstrap parallel current <J . B> [AT/m^2]
 !     ETA   : neoclassical resistivity [Ohm m]
 !     ETAS  : classical resistivity [Ohm m],               optional
 !
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-    real(8), intent(in) :: NE,TE,DTE,DPE_IN,NI,TI,DTI,DPI_IN,Q,BB,DPSI,IPSI,EPS,RR, &
-    &                      ZI,ZEFF,FT
-    real(8), intent(in), optional :: rlnLei_IN,rlnLii_IN,NUE_IN,NUI_IN
-    real(8), intent(out) :: JBS, ETA
-    real(8), intent(out), optional :: JBSB, ETAS
+    integer(4), intent(in) :: ispc
+    real(8), dimension(:), intent(in) :: den, tem, dtem, dpres, zz
+    real(8), intent(in) :: qval, dpsi, Ipsi, EPS, RR, Zeff, ftrap
+    real(8), intent(in), optional :: rlnLei_IN, rlnLii_IN, NUE_IN, NUI_IN
+    real(8), intent(out) :: BJBS, ETA
+    real(8), intent(out), optional :: ETAS
+    ! local
+    real(8), dimension(size(tem)) :: tem_ev, pres, dpresz
+    real(8) :: EPSS,LnLame,NUE,LnLamii,NUI,RPE,alpha0,alpha,L31,L32,L34,RNZ,SGMSPTZ
+    real(8) :: F31Teff,F32EETeff,F32EITeff,F34Teff,F33Teff,coef
 
-    real(8) :: EPSS,LnLame,NUE,LnLamii,NUI,RPE,ALFA0,ALFA,L31,L32,L34,RNZ,SGMSPTZ,QABS,&
-         &     PE,PI,DPE,DPI,TEeV,TIeV
-    real(8) :: F31TEFF,F32EETEFF,F32EITEFF,F34TEFF,F33TEFF
-
-    TEeV = TE * 1.D3
-    TIeV = TI * 1.D3
+    tem_eV(:) = tem(:) * 1.d3
 
     ! On magnetic axis, the neoclassical resistivity reduces to the classical resistivity
     ! and the bootstrap current vanishes.
-    IF(EPS == 0.D0) THEN
-       RNZ = 0.58D0+0.74D0/(0.76D0+ZEFF)
-       LnLame=31.3D0-LOG(SQRT(NE*1.D20)/ABS(TEeV))
-       IF(PRESENT(rlnLei_IN)) LnLame = rlnLei_IN
+    IF(EPS == 0.d0) THEN
+       RNZ = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18a) [1]
+       LnLame=31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+       IF(present(rlnLei_IN)) LnLame = rlnLei_IN
 
-       JBS = 0.D0
-       ETA = 1.D0 / (1.9012D4*TEeV**1.5D0/(ZEFF*RNZ*LnLame))
-       IF(PRESENT(JBSB)) JBSB = 0.D0
-       IF(PRESENT(ETAS)) ETAS = ETA
-       RETURN
+       BJBS = 0.d0
+       ETA = 1.d0 / (1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame)) ! (18a) [1]
+       IF(present(ETAS)) ETAS = ETA
+       return
     END IF
 
-    EPSS = SQRT(EPS)**3
-    QABS = ABS(Q)
+    EPSS = sqrt(EPS)**3
 
-    PE  = NE * TEeV * 1.D20 * AEE
-    PI  = NI * TIeV * 1.D20 * AEE
-    DPE = DPE_IN    * 1.D20 * AEE * 1.D3
-    DPI = DPI_IN    * 1.D20 * AEE * 1.D3
+    ! pressure
+    pres(:)  = den(:) * 1.d20 * tem_eV(:) * aee ! [J/m^3]
+    ! pressure gradient
+    dpresz(:) = dpres(:) * 1.d20 * aee * 1.d3
 
 !     LnLam : coulomb logarithm
 !     NU    : collisional frequency [/s]
 
-    LnLame=31.3D0-LOG(SQRT(NE*1.D20)/ABS(TEeV))
-    IF(PRESENT(rlnLei_IN)) LnLame = rlnLei_IN
-    NUE=6.921D-18*QABS*RR*NE*1.D20*ZEFF*LnLame/(ABS(TEeV)**2*EPSS)
-    IF(PRESENT(NUE_IN))   NUE    = NUE_IN
+    LnLame=31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+    IF(present(rlnLei_IN)) LnLame = rlnLei_IN
+    NUE = 6.921d-18*abs(qval)*RR*den(1)*1.d20*Zeff*LnLame/(abs(tem_eV(1))**2*EPSS) ! (18b) [1]
+    IF(present(NUE_IN))   NUE = NUE_IN
 
-    LnLamii=30.D0-LOG(ZI**3*SQRT(NI*1.D20)/(ABS(TIeV)**1.5D0))
-    IF(PRESENT(rlnLii_IN)) LnLamii = rlnLii_IN
-    NUI = 4.90D-18*QABS*RR*NI*1.D20*ZI**4*LnLamii/(ABS(TIeV)**2*EPSS)
-    IF(PRESENT(NUI_IN))   NUI     = NUI_IN
+    LnLamii=30.d0-log(zz(2)**3*sqrt(den(2)*1.d20)/(abs(tem_eV(2))**1.5d0)) ! (18c) [1]
+    IF(present(rlnLii_IN)) LnLamii = rlnLii_IN
+    NUI = 4.90d-18*abs(qval)*RR*den(2)*1.d20*zz(2)**4*LnLamii/(abs(tem_eV(2))**2*EPSS) ! (18e) [1]
+    IF(present(NUI_IN))   NUI = NUI_IN
 
 !     RPE   : ratio of electron pressure to total pressure 
 
-    RPE = PE/(PE+PI)
+    RPE = pres(1)/sum(pres(1:ispc))
 
-    F31TEFF   = FT/(1.D0+(1.D0-0.1D0*FT)*SQRT(NUE)+0.5D0*(1.D0-FT)*NUE/ZEFF)
-    F32EETEFF = FT/(1.D0+0.26D0*(1.D0-FT)*SQRT(NUE)+0.18D0*(1.D0-0.37D0*FT)*NUE/SQRT(ZEFF))
-    F32EITEFF = FT/(1.D0+(1.D0+0.6D0*FT)*SQRT(NUE)+0.85D0*(1.D0-0.37D0*FT)*NUE*(1.D0+ZEFF))
-    F34TEFF   = FT/(1.D0+(1.D0-0.1D0*FT)*SQRT(NUE)+0.5D0*(1.D0-0.5D0*FT)*NUE/ZEFF)
+!! Eq.(14b) [1]
+    F31Teff   = ftrap/(1.d0+(1.d0-0.1d0*ftrap) *sqrt(NUE)+0.50d0*(1.d0-       ftrap)*NUE/Zeff)
+!! Eq.(15d) [1]
+    F32EETeff = ftrap/(1.d0+0.26d0*(1.d0-ftrap)*sqrt(NUE)+0.18d0*(1.d0-0.37d0*ftrap)*NUE/sqrt(Zeff))
+!! Eq.(15e) [1]
+    F32EITeff = ftrap/(1.d0+(1.d0+0.6d0*ftrap) *sqrt(NUE)+0.85d0*(1.d0-0.37d0*ftrap)*NUE*(1.d0+Zeff))
+!! Eq.(16b) [1]
+    F34Teff   = ftrap/(1.d0+(1.d0-0.1d0*ftrap) *sqrt(NUE)+0.50d0*(1.d0-0.50d0*ftrap)*NUE/Zeff)
 
-    ALFA0 = -1.17D0*(1.D0-FT)/(1.D0-0.22D0*FT-0.19D0*FT**2)
-    ALFA  = ((ALFA0+0.25D0*(1.D0-FT**2)*SQRT(NUI)) &
-         &     /(1.D0+0.5D0*SQRT(NUI))+0.315D0*NUI**2*FT**6)/(1.D0+0.15D0*NUI**2*FT**6)
+!! Eq.(17a) [1]
+    alpha0 = -1.17d0*(1.d0-ftrap)/(1.d0-ftrap*(0.22d0+0.19d0*ftrap))
+!! First equation [2]
+    coef  = (NUI*ftrap**3)**2
+    alpha  = ((alpha0+0.25d0*(1.d0-ftrap**2)*sqrt(NUI))/(1.d0+0.5d0*sqrt(NUI))+0.315d0*coef) &
+            /(1.d0+0.15d0*coef)
 
-    L31 = F31(F31TEFF,ZEFF)
-    L32 = F32EE(F32EETEFF,ZEFF)+F32EI(F32EITEFF,ZEFF)
-    L34 = F31(F34TEFF,ZEFF)
+    L31 = F31(F31Teff,Zeff)
+    L32 = F32EE(F32EETeff,Zeff)+F32EI(F32EITeff,Zeff)
+    L34 = F31(F34Teff,Zeff)
 
 !     *** Bootstrap Current, JBS ***
 
-    JBS = -IPSI*PE/DPSI/BB &
-         & *( L31*(DPE+DPI)/PE+L32*DTE/TE+L34*ALFA*(1.D0-RPE)/RPE*DTI/TI)
-    if(present(jbsb)) JBSB = -JBS*BB
+!! Second equation [2]
+    BJBS = -Ipsi*pres(1)/dpsi &
+           *(  L31                      *sum(dpresz(1:ispc))/pres(1) &
+             + L32                      *dtem(1)/tem(1) &
+             + L34 *alpha*(1.d0-RPE)/RPE*dtem(2)/tem(2))
 
 !     *** Spitzer and Neoclassical Resistivity, ETAS, ETA ***
 
-    F33TEFF = FT/(1.D0+(0.55D0-0.1D0*FT)*SQRT(NUE)+0.45D0*(1.D0-FT)*NUE/ZEFF**1.5D0)
-    RNZ     = 0.58D0+0.74D0/(0.76D0+ZEFF)
-    SGMSPTZ = 1.9012D4*TEeV**1.5D0/(ZEFF*RNZ*LnLame)
-    ETA  = 1.D0 / (SGMSPTZ * F33(F33TEFF,ZEFF))
-    if(present(etas)) ETAS = 1.D0 / SGMSPTZ
+!! Eq.(13b) [1]
+    F33Teff = ftrap/(1.d0+(0.55d0-0.1d0*ftrap)*sqrt(NUE)+0.45d0*(1.d0-ftrap)*NUE/Zeff**1.5d0)
+    RNZ     = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18d) [1]
+    SGMSPTZ = 1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame) ! (18a) [1]
+    ETA     = 1.d0 / (SGMSPTZ * F33(F33Teff,Zeff))
+    if(present(etas)) ETAS = 1.d0 / SGMSPTZ
 
-  END SUBROUTINE SAUTER
+  end subroutine sauter
+
+!***********************************************************************
+!
+!       Redl's modifiled Sauter model 
+!
+!   [3] A. Redl et al., PoP 28, 022502 (2021)
+!
+!***********************************************************************
+  
+  subroutine redl_sauter(ispc,den,tem,dtem,dpres,zz &
+                        ,qval,dpsi,Ipsi,EPS,RR,Zeff,ftrap &
+                        ,BJBS,ETA,ETAS)
+
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+!     Programmed by N. Aiba and M. Honda (2024/07/25)
+!     
+!     Note that all the parameters are on the GRID point.
+!     "rho" denotes the radial coordinate and whether or not it is dimensionless
+!        does not matter. It only requires that derivatives are consistent to dpsi.
+!
+!     *** INPUT VARIABLES ***
+!     den   : electron density for all species [10^20/m^3]
+!     tem   : electron temperature for all species [keV]
+!     dtem  : partial derivative of temperature to rho for all species [keV/rho]
+!     dpres : partial derivative of pressure to rho for all species [10^20 kev/m^3/rho]
+!     zz    : charge number for all species
+! 
+!     qval  : safety factor
+!     dpsi  : partial derivative of poloidal flux to rho [Wb/rho]
+!     Ipsi  : magnetic flux function, i.e. the product of major radius
+!             and toroidal magnetic field (RR*BT) [mT]
+!     EPS   : local inverse aspect ratio
+!     RR    : major radius [m]
+!     Zeff  : effective charge number
+!     ftrap : trapped particle fraction
+!
+!     *** OUTPUT VARIABLES ***
+!     BJBS  : bootstrap parallel current <J . B> [AT/m^2]
+!     ETA   : neoclassical resistivity [Ohm m]
+!     ETAS  : classical resistivity [Ohm m],               optional
+!
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    integer(4), intent(in) :: ispc
+    real(8), dimension(:), intent(in) :: den, tem, dtem, dpres, zz
+    real(8), intent(in) :: qval, dpsi, Ipsi, EPS, RR, Zeff, ftrap
+    real(8), intent(out) :: BJBS, ETA
+    real(8), intent(out), optional :: ETAS
+    ! local
+    real(8), dimension(size(tem)) :: tem_ev, pres, dden
+    real(8) :: EPSS,LnLame,NUE,LnLamii,NUI
+    real(8) :: alpha0,alpha,L31,L32,L34,RNZ,SGMSPTZ
+    real(8) :: F31Teff,F32EETeff,F32EITeff,F33Teff,X,coef,denom
+
+    tem_eV(:) = tem(:) * 1.d3
+
+    ! On magnetic axis, the neoclassical resistivity reduces to the classical resistivity
+    ! and the bootstrap current vanishes.
+    if(EPS == 0.d0) then
+       RNZ = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18a) [1]
+       LnLame = 31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+
+       BJBS = 0.d0
+       ETA = 1.d0 / (1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame)) ! (18a) [1]
+       return
+    end if
+
+    EPSS = sqrt(EPS)**3
+
+    ! pressure
+    pres(:)  = den(:) * 1.d20 * tem_eV(:) * aee ! [J/m^3]
+    ! density gradient
+    dden(1:ispc) = ( dpres(1:ispc) - den(1:ispc) * dtem(1:ispc) ) / tem(1:ispc)
+
+!-----
+!     LnLam : coulomb logarithm
+!     NU    : collisional frequency [/s]
+!
+! Looking at the 2nd sentence of the 1st paragraph of section III.D,
+! it states, 'the definitions of the key parameters ... [Eqs.(12) and (18a)-(18e) in original Sauter
+! paper] must be used in order to calculate correctly and accurately the bootstrap current density
+! with this set of analytical formulae.'
+
+    LnLame = 31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+    NUE = 6.921d-18*abs(qval)*RR*den(1)*1.d20*Zeff*LnLame/(tem_eV(1)**2*EPSS) ! (18b) [1]
+
+! Here, zz(2) should be kept unchanged even if a plasma contains many ion species.
+! The literature [2] states 'Also in these formulas Z usually refers to the effective charge Z_eff,
+! except for the ion terms Eqs. (18c) and (18e), where it should be replaced by the main ion charge Z_i.'
+    LnLamii = 30.d0-log(zz(2)**3*sqrt(den(2)*1.d20)/(abs(tem_eV(2))**1.5d0)) ! (18c) [1]
+    NUI = 4.90d-18*abs(qval)*RR*den(2)*1.d20*zz(2)**4*LnLamii/(tem_eV(2)**2*EPSS) ! (18e) [1]
+!-----
+
+!! Eq.(11) [3]
+    F31Teff   = ftrap/(1.d0+(0.67d0*(1.d0-0.7d0*ftrap)*sqrt(NUE)/(0.56d0+0.44d0*Zeff)) &
+                     + (0.52d0+0.086d0*sqrt(NUE))*(1.d0+0.87d0*ftrap)*NUE/(1.d0+1.13d0*sqrt(Zeff-1.d0)))
+!! Eq.(14) [3]
+    F32EETeff = ftrap/(1.d0+(0.23d0*(1.d0-0.96d0*ftrap)*sqrt(NUE)/sqrt(Zeff)) &
+         + (0.13d0*(1.d0-0.38d0*ftrap)*NUE/Zeff**2) &
+         * (sqrt(1.d0+2.d0*sqrt(Zeff-1.d0))+ftrap**2*sqrt((0.075d0+0.25d0*(Zeff-1.d0)**2)*NUE)))
+!! Eq.(16) [3]
+    F32EITeff = ftrap/(1.d0+(0.87d0*(1.d0+0.39d0*ftrap)*sqrt(NUE)/(1.d0+2.95d0*(Zeff-1.d0)**2)) &
+                     + 1.53d0*(1.d0-0.37d0*ftrap)*NUE*(2.d0+0.375d0*(Zeff-1.d0)))
+!! Eq.(20) [3]
+    alpha0 = -(0.62d0+0.055d0*(Zeff-1.d0))/(0.53d0+0.17d0*(Zeff-1.d0)) &
+           * (1.d0-ftrap)/(1.d0-ftrap*((0.31d0-0.065d0*(Zeff-1.d0))-0.25d0*ftrap))
+!! Eq.(21) [3]
+    coef  = (NUI*ftrap**3)**2
+    alpha  = ((alpha0+0.7d0*Zeff*sqrt(ftrap)*sqrt(NUI))/(1.d0+0.18d0*sqrt(NUI))-2.d-3*coef) &
+           /(1.d0+4.d-3*coef)
+
+!! Eq.(10) [3]
+    denom  = Zeff**1.2d0-0.71d0
+    X = F31Teff
+    L31 =  (1.d0+0.15d0/denom)*X &
+         + (- 0.22d0 + 0.01d0*X + 0.06d0*X**2)*X**2/denom
+!! Eqs.(12), (13) and (15) [3]
+    !    L32 = F32EE(F32EETeff,Zeff)+F32EI(F32EITeff,Zeff)
+    X = F32EETeff
+    L32 = (0.1d0+0.6d0*Zeff)*X*(1.d0-X**3)/(Zeff*(0.77d0+0.63d0*(1.d0+(Zeff-1.d0)**1.1d0))) &
+         + 0.7d0*X**2*(1.d0-X**2-1.2d0*X*(1.d0-X))/(1.d0+0.2d0*Zeff) + 1.3d0*X**4/(1.d0+0.5d0*Zeff)
+    X = F32EITeff
+    L32 = L32 &
+         -(0.4d0+1.93d0*Zeff)*X*(1.d0-X**3)/(Zeff*(0.8d0+0.6d0*Zeff)) &
+         + 5.5d0*X**2*(1.d0-X**2-0.8d0*X*(1.d0-X))/(1.5d0+2.d0*Zeff) - 1.3d0*X**4/(1.d0+0.5d0*Zeff)
+!! Eq. (19) [3]
+    L34 = L31
+
+!     *** Bootstrap Current, JBS ***
+
+! Looking at the sentence just before equation (3) on page 3 of [3],
+! it states, 'the occurring density gradients of ions and electrons are set equal.'
+! However, the resultant JBS would be pretty different from that by other models 
+! if JBS were implemented such as the density gradients of ions and electrons are set equal.
+! Hence, we should regard p*d(ln(n))/dpsi as
+!   p*d(ln(n))/dpsi = sum_s(p_s*d(ln(n_s))/dpsi)
+
+! In Eq.(7), it is stated that p sums over ion species and impurity species, 
+! but in Eq.(8), contrary to the sentence written just before Eq.(7), it sums only over the ion species.
+
+!!  Eq.(2) [3]
+    BJBS = -Ipsi/dpsi &
+         *(   L31           *sum(pres(1:ispc)*dden(1:ispc)/den(1:ispc)) &
+           + (L31+L32)      *    pres(1)     *dtem(1)     /tem(1) &
+           + (L31+L34*alpha)*    pres(2)     *dtem(2)     /tem(2) )
+
+!     *** Spitzer and Neoclassical Resistivity, ETAS, ETA ***
+
+!! Eq.(18) [3]
+    F33Teff = ftrap/(  1.d0+0.25d0*(1.d0-0.7d0*ftrap)*sqrt(NUE)*(1.d0+0.45d0*sqrt(Zeff-1.d0)) &
+                  + 0.61d0*(1.d0-0.41d0*ftrap)*NUE/sqrt(Zeff))
+    RNZ     = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18a) [1]
+    SGMSPTZ = 1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame) ! (18a) [1]
+!! Eq.(17) [3]
+    X = F33Teff
+    ETA  = 1.d0 / (SGMSPTZ * (1.d0-X*((1.d0+0.21/Zeff)+X/Zeff*(0.54d0-X*0.33d0))))
+
+    if(present(etas)) ETAS = 1.d0 / SGMSPTZ
+
+  end subroutine redl_sauter
 
 !     *********************
 !     *  Fitting Function *
 !     *********************
 
-  pure real(8) FUNCTION F33(X,Z)
+  pure real(8) function F33(X,Z)
     
     real(8), intent(in) :: X,Z
 
-    F33 = 1.D0+(-(1.D0+0.36D0/Z)+(0.59D0-0.23D0*X)*X/Z)*X
+!! Eq.(13a) [1]
+    F33 = 1.d0+(-(1.d0+0.36d0/Z)+(0.59d0-0.23d0*X)*X/Z)*X
 
-  END FUNCTION F33
+  end function F33
 
-  pure real(8) FUNCTION F31(X,Z)
-
-    real(8), intent(in) :: X,Z
-
-    F31 = ((1.D0+1.4D0/(Z+1.D0))+(-1.9D0+(0.3D0+0.2D0*X)*X)*X/(Z+1.D0))*X
-
-  END FUNCTION F31
-
-  pure real(8) FUNCTION F32EE(X,Z)
+  pure real(8) function F31(X,Z)
 
     real(8), intent(in) :: X,Z
 
-    F32EE = ((0.05D0+0.62D0*Z)/(Z*(1.D0+0.44D0*Z))*(1.D0-X**3) &
-         &       +( 1.D0/(1.D0+0.22D0*Z)*(1.D0-1.2D0*X+0.2D0*X**2) &
-         &         +1.2D0/(1.D0+0.5D0*Z)*X**2)*X)*X
+!! Eq.(14a) [1]
+    F31 = ((1.d0+1.4d0/(Z+1.d0))+(-1.9d0+(0.3d0+0.2d0*X)*X)*X/(Z+1.d0))*X
 
-  END FUNCTION F32EE
+  end function F31
 
-  pure real(8) FUNCTION F32EI(X,Z)
+  pure real(8) function F32EE(X,Z)
 
     real(8), intent(in) :: X,Z
 
-    F32EI =(-(0.56D0+1.93D0*Z)/(Z*(1.D0+0.44D0*Z))*(1.D0-X**3) &
-         &       +( 4.95D0/(1.D0+2.48D0*Z)*(1.D0-0.55D0*X-0.45D0*X**2) &
-         &         -1.2D0/(1.D0+0.5D0*Z)*X**2)*X)*X
+!! Eq.(15b) [1]
+    F32EE = ((0.05d0+0.62d0*Z)/(Z*(1.d0+0.44d0*Z))*(1.d0-X**3) &
+                 +( 1.d0/(1.d0+0.22d0*Z)*(1.d0-1.2d0*X+0.2d0*X**2) &
+                   +1.2d0/(1.d0+0.5d0*Z)*X**2)*X)*X
 
-  END FUNCTION F32EI
+  end function F32EE
+
+  pure real(8) function F32EI(X,Z)
+
+    real(8), intent(in) :: X,Z
+
+!! Eq.(15c) [1]
+    F32EI =(-(0.56d0+1.93d0*Z)/(Z*(1.d0+0.44d0*Z))*(1.d0-X**3) &
+                 +( 4.95d0/(1.d0+2.48d0*Z)*(1.d0-0.55d0*X-0.45d0*X**2) &
+                   -1.2d0/(1.d0+0.5d0*Z)*X**2)*X)*X
+
+  end function F32EI
 
 end module sauter_mod
 
+!------------------------------------------------------------------------
 
 module tx_nclass_mod
   implicit none
   private
-  public :: TX_NCLASS
+  public :: tx_nclass
 
 contains
 
@@ -194,23 +368,26 @@ contains
 !
 !***********************************************************
 
-  SUBROUTINE TX_NCLASS(NR,NueNC,NuiNC,Nue2NC,Nui2NC,FQethL,FQithL, &
-       &               ETA_heat,JBS_heat,ETAout,JBSout, &
-       &               ChiNCpel,ChiNCtel,ChiNCpil,ChiNCtil, &
-       &               dTedr,dTidr,dPedr,dPidr,IER,dErdr,dBthdr,dErdr0,dBthdr0,p_gr2phi_in)
+  subroutine tx_nclass(NR,ETAout,BJBSout, &
+       &               ChiNCpl,ChiNCtl, &
+       &               dTsdrho,dPsdrho,p_gr2phi_in,IER)
 !****************************************************************************
 !
-!  Input : NR,dErdr,dBthdr,dTedr,dTidr,dPedr,dPidr
-!          (optional) dErdr0,dBthdr0
-!  Output: NueNC,NuiNC,Nue2NC,Nui2NC,FQethL,FQithL,ETA_heat,JBS_heat,ETAout,JBSout,
-!          ChiNCpel,ChiNCtel,ChiNCpil,ChiNCtil,IER
+!  Input : NR,dTsdrho(NSM),dPsdrho(NSM),p_gr2phi_in
+!  Output: ETAout,BJBSout,
+!          ChiNCpl(NSM),ChiNCtl(NSM),IER
 !
 !****************************************************************************
 !
 !TX_NCLASS calculates various parameters and arrays for NCLASS.
 !Please note that type declarations of all variables except "INTEGER" 
-!  in NCLASS subroutine are "REAL(*4)" or "SINGLE" but not "REAL*8" 
+!  in NCLASS subroutine are "real(*4)" or "SINGLE" but not "real*8" 
 !  or "DOUBLE".
+!
+!The radial coordinate in NCLASS is arbitrary, though it is expressed as 'rho'.
+!Considering the compatibility with TASK/TX, we choose the volume as 'rho'.
+!                                                          ^^^^^^^^^^^^^^^
+!
 !Input:
 !  k_order - order of v moments to be solved (-)
 !          =2 u and q
@@ -286,45 +463,28 @@ contains
 !        = 5 error: inversion of flow matrix failed
 !        = 6 error: trapped fraction must be 0.0.le.p_ft.le.1.0
 !***********************************************************************
-    use tx_commons
-    use sauter_mod
+    use tx_commons, only : Pi, amp, amqp, rKilo, amb, NRA, ChiNC, FSNC, FSNCB &
+         & , rr, ra, q, amas, achg, achgb, Vb, Var, Zeff, BEpara, dPhidV, UsthNCL, BusparNCL &
+         & , gflux, xmu, lab, xmuf, laf, lfb, lff, PNbV, BnablaPi &
+         & , epst, bbt, bit, elip, fipol, ft, sdt, vro, bthco, bbrt, sst
     INCLUDE 'nclass/pamx_mi.inc'
     INCLUDE 'nclass/pamx_ms.inc'
     INCLUDE 'nclass/pamx_mz.inc'
     INCLUDE 'txncls.inc'
-    INTEGER(4), INTENT(IN)  :: NR
-    INTEGER(4), INTENT(OUT) :: IER
-    real(8), intent(in)  :: dTedr,dTidr,dPedr,dPidr
-    real(8), intent(in), optional :: dErdr,dBthdr,dErdr0,dBthdr0
-    real(4), intent(in), optional :: p_gr2phi_in
-    REAL(8), INTENT(OUT) :: NueNC, NuiNC, Nue2NC, Nui2NC, FQethL, FQithL, &
-         &                  ETA_heat, JBS_heat, ETAout, JBSout
-    INTEGER(4) :: i, k_out, k_v, ier_check
-    REAL(4) :: a0, bt0, e0, p_eps, p_q, q0l, r0
-    REAL(8) :: EpsL, BBL, PZMAX, &
-         &     PAL, PZL, RKAP, &
-         &     ChiNCpel, ChiNCtel, ChiNCpil, ChiNCtil
-    real(8) :: RL, RAL, BphVL, BthVL, EphVL, EthVL, QL, ErVL, PTeVL, PTiVL, &
-         &     PNeVL, PNiVL, PeVL, PiVL, &
-         &     dErdrL, dBthdrL, dTedrL, dTidrL, dPedrL, dPidrL
-!!    real(8) :: p_fhat1, p_fhat2, p_fhat3, btot, uthai, VPOL(0:NRMAX), ppr, AJBSL, ETAL
-
-    !     *** Ellipticity on axis ***
-
-    RKAP = 1.D0
-!RKAP    RKAP = 2.1D0
-
-    !     *** Internal minor radius ***
-
-    RAL = RA
-!RKAP    RAL = 2.1D0
-
-    !     *** Dummy impurity for using high Zeff ***
-
-!!$    PAL = 12.D0
-!!$    PZL = 6.D0
-    PAL = 56.D0 ! Fe
-    PZL = 18.D0 ! Fe
+    integer(4), intent(in)  :: NR
+    integer(4), intent(out) :: ier
+    real(8), intent(in), dimension(:)  :: dTsdrho, dPsdrho
+    real(8), intent(in)  :: p_gr2phi_in
+    real(8), intent(out), dimension(:) :: ChiNCpl, ChiNCtl
+    real(8), INTENT(out) :: ETAout, BJBSout
+    integer(4) :: i, k_out, k_v, ier_check, j, k, l
+    real    :: a0, bt0, e0, p_eps, p_q, q0l, r0, ds
+    real(8) :: EpsL, sgn_xi_s
+    real(8), dimension(size(dTsdrho)) :: pres_i
+    real(8) :: zp43, Vte, Vti, Wc3, Vc3, Vbc3
+!    real(8) :: PZMAX
+    real    :: smallvalue = 1.e-5
+    real    :: tau_ss(mx_ms,mx_ms) ! Added argument from NCLASS
 
     !     *** Initialization ***
 
@@ -335,7 +495,7 @@ contains
     grp_iz(1:mx_mi,1:mx_mz) = 0.0
     fex_iz(1:3,1:mx_mi,1:mx_mz) = 0.0
 
-    IER = 0
+    ier = 0
 
     !  k_out-option for output to nout (-)
     !       = 0 no display
@@ -347,143 +507,90 @@ contains
     !       =else no output
     k_out    = 0
     k_v      = 1
-    k_order  = 2
-    k_potato = 1
+    k_order  = 3
+    k_potato = 0
 
-    m_i      = 2
-    IF(Zeff > 1.D0) m_i   = 3
-    PZMAX    = PZ
-    IF(Zeff > 1.D0) PZMAX = PZL
-    m_z      = INT(PZMAX)
-    c_den    = 1.E10
+    c_den    = 1.e10
     !  *** Potate orbit factors ****************
-    c_potb   = REAL(RKAP*BphV(0)/(2.D0*Q(0)**2))
-    c_potl   = REAL(Q(0)*RR)
+    c_potb   = real(elip(NRA)*fipol(0)/(2.d0*Q(0)**2*rr))
+    c_potl   = real(Q(0)*rr)
     !  *****************************************
 
-    amu_i(1) = REAL(AEP)
-    amu_i(2) = REAL(PA)
-    IF(Zeff > 1.D0) amu_i(3) = REAL(PAL)
+    do i = 1, size(dTsdrho)
+       pres_i(i)  = Var(NR,i)%p
+       den_iz(i,int(abs(achg(i)))) = real(Var(NR,i)%n) * 1.e20 ! single charge state
+    end do
 
-    !***** !! IMPORTANT !! **********************************************!
-    !  When NR == 0, the values are evaluated at the position            !
-    !    intermediate between the magnetic axis and the adjacent mesh.   !
-    !********************************************************************!
-    
-    IF (NR /= 0) THEN
-       RL    = R(NR)
-!RKAP       RL    = R(NR) * (RAL / RA)
-       BphVL = BphV(NR) ; BthVL = BthV(NR)
-       EphVL = EphV(NR) ; EthVL = EthV(NR)
-       QL    = Q   (NR) ; ErVL  = ErV (NR)
-       PTeVL = PTeV(NR) ; PTiVL = PTiV(NR)
-       PNeVL = PNeV(NR) ; PNiVL = PNiV(NR)
-       PeVL  = PeV (NR) ; PiVL  = PiV (NR)
-       dTedrL = dTedr   ; dTidrL  = dTidr
-       dPedrL = dPedr   ; dPidrL  = dPidr
-       if(present(dErdr)) then
-          dErdrL = dErdr
-       else
-          dErdrL = 0.D0
-       end if
-       if(present(dBthdr)) then
-          dBthdrL = dBthdr
-       else
-          dBthdrL = 0.D0
-       end if
-    ELSE
-       RL    = 0.5D0 * R(NR+1)
-!RKAP       RL    = 0.5D0 * R(NR+1) * (RAL / RA)
-       BphVL = 0.5D0 *(BphV(NR) + BphV(NR+1)) ; BthVL = 0.5D0 * BthV(NR+1)
-       EphVL = 0.5D0 *(EphV(NR) + EphV(NR+1)) ; EthVL = 0.5D0 * EthV(NR+1)
-       QL    = 0.5D0 *(Q   (NR) + Q   (NR+1)) ; ErVL  = 0.5D0 * ErV (NR+1)
-       PTeVL = 0.5D0 *(PTeV(NR) + PTeV(NR+1)) ; PTiVL = 0.5D0 *(PTiV(NR) + PTiV(NR+1))
-       PNeVL = 0.5D0 *(PNeV(NR) + PNeV(NR+1)) ; PNiVL = 0.5D0 *(PNiV(NR) + PNiV(NR+1))
-       PeVL  = 0.5D0 *(PeV (NR) + PeV (NR+1)) ; PiVL  = 0.5D0 *(PiV (NR) + PiV (NR+1))
-       dTedrL = 0.5D0 * dTedr   ; dTidrL  = 0.5D0 * dTidr
-       dPedrL = 0.5D0 * dPedr   ; dPidrL  = 0.5D0 * dPidr
-       if(present(dErdr)) then
-          dErdrL = 0.5D0 *(dErdr + dErdr0)
-       else
-          dErdrL = 0.D0
-       end if
-       if(present(dBthdr)) then
-          dBthdrL = 0.5D0 *(dBthdr + dBthdr0)
-       else
-          dBthdrL = 0.D0
-       end if
-    END IF
+!  m_i-number of isotopes (1<mi<mx_mi+1)
+!  m_z-highest charge state of all species (0<mz<mx_mz+1)
 
-    BBL   = SQRT(BphVL**2 + BthVL**2)
-    EpsL  = RL / RR
-    p_b2  = REAL(BBL**2)
-    p_bm2 = REAL(1.D0 / BBL**2)
+    m_i = 0
+    m_z = 0
+    do i = 1, mx_mi
+       ds = 0.0
+       do j = 1,mx_mz
+          if(den_iz(i,j) > c_den) then
+             ds = den_iz(i,j)
+             if(j > m_z) m_z = j
+          end if
+       end do
+       if(ds > c_den) m_i = m_i+1
+    end do
 
-    p_eb  = REAL(EphVL*BphVL + EthVL*BthVL)
+    do i = 1, m_i
+       amu_i(i)  = real(amas(i))
+       temp_i(i) = real(Var(NR,i)%T)   ! [keV]
+    end do
+
+    EpsL  = epst(NR)
+    p_b2  = real(bbt(NR)) ! <B^2>
+    p_bm2 = real(bit(NR)) ! <B^-2>
+
+    p_eb  = real(BEpara(NR))
     ! No ohmic current causes infinite resistivity in the NCLASS module.
-    IF(p_eb == 0.D0) p_eb = 1.e-10
+    if(p_eb == 0.d0) p_eb = 1.e-10
 
-!!$    IF(NR == 0) THEN
-!!$       p_fhat1 = BphV(NR+1)/(RAL*BthV(NR+1))
-!!$       p_fhat2 = BphV(NR+2)/(RAL*BthV(NR+2))
-!!$       p_fhat3 = BphV(NR+3)/(RAL*BthV(NR+3))
-!!$       p_fhat  = REAL(AITKEN2P(R(0),p_fhat1,p_fhat2,p_fhat3,R(1),R(2),R(3)))
-!!$    ELSE
-       p_fhat  = REAL(BphVL/(RAL*BthVL))
-!!$    END IF
-
-    !  Approximation inverse aspect ratio at the magnetix axis
-!!$    IF(NR == 0) EpsL = 0.01D0*R(NR+1)/RR
-    IF(REAL(EpsL) > 0.0) THEN
+    if( EpsL > 0.d0 ) then
+       p_ft    = real(ft(NR))
+       p_fhat  = real(fipol(NR)/sdt(NR))
        ! poloidal moments of geometric factor for PS viscosity
-       DO i=1,3
-          p_fm(i)=REAL(DBLE(i)*( (1.D0-SQRT(1.D0-EpsL**2))/EpsL)**(2*i) &
-               &                *(1.D0+DBLE(i)*SQRT(1.D0-EpsL**2))/((1.D0-EpsL**2)**1.5D0 &
-               &                *(QL*RR)**2))
-       ENDDO
-    ENDIF
-!!    p_fm(1:3) = 0.0 ! No Pfirsch-Schulter viscosity
-    p_ft=REAL(1.46D0 * SQRT(EpsL) - 0.46 * EpsL * SQRT(EpsL))
-
-    p_grbm2   = REAL(1.D0/(RAL*BBL)**2)
-    p_grphi   = REAL(-RAL*ErVL)
-!    p_gr2phi  = REAL(-RAL**2*dErdrL) ! Orbit squeezing
-    ! For orbit squeezing (Houlberg, PoP, 1997, Eq. (B2))
-    if(present(p_gr2phi_in)) then
-       p_gr2phi = p_gr2phi_in
+       do i = 1, 3
+          p_fm(i)=real(real(i,8)*( (1.d0-sqrt(1.d0-EpsL**2))/EpsL)**(2*i) &
+               &                *(1.d0+real(i,8)*sqrt(1.d0-EpsL**2))/((1.d0-EpsL**2)**1.5d0 &
+               &                *(Q(NR)*rr)**2))
+       end do
     else
-!!$       if(nr == 0) then
-!!$          p_gr2phi = 0.0 ! Any value is OK because the value at nr=0 is discarded.
-!!$       else
-          p_gr2phi  = REAL(-RAL**2*dErdrL+RAL**2*ErVL*dBthdrL/BthVL)
-!!$          if(nt==ntmax)write(6,*) Rho(NR),-RAL**2*dErdrL,RAL**2*ErVL*dBthdrL/BthVL
-!!$          if(nr == 1) write(6,*) T_TX,p_gr2phi
-!!$       end if
+       p_ft      = smallvalue ! how to choose this value significantly affects results
+       p_fhat    = real(fipol(1)/sdt(1))
+       p_fm(1:3) = 0.0
     end if
-    p_ngrth   = REAL(BphVL/(RR*QL*BBL))
-    temp_i(1) = REAL(PTeVL)
-    temp_i(2) = REAL(PTiVL)
-    grt_i(1)  = REAL(RAL * dTedrL)
-    grt_i(2)  = REAL(RAL * dTidrL)
-    den_iz(1,1)       = REAL(PNeVL) * 1.E20
-    den_iz(2,INT(PZ)) = REAL(PNiVL) * 1.E20
-    grp_iz(1,1)       = REAL(RAL * dPedrL) * 1.E20
-    grp_iz(2,INT(PZ)) = REAL(RAL * dPidrL) * 1.E20
-    IF (Zeff > 1.D0) THEN
-       temp_i(3) = temp_i(2)
-       grt_i(3)  = grt_i(2)
-       den_iz(2,INT(PZ))  = REAL((PZL*PZ-Zeff)/(PZ*(PZL-PZ))*PNiVL) * 1.E20
-       den_iz(3,INT(PZL)) = REAL((Zeff-PZ**2)/(PZL*(PZL-PZ))*PNiVL) * 1.E20
-       grp_iz(2,INT(PZ))  = REAL(RAL * dPidrL * (PZL*PZ-Zeff)/(PZ*(PZL-PZ))) * 1.E20
-       grp_iz(3,INT(PZL)) = REAL(RAL * dPidrL * (Zeff-PZ**2)/(PZL*(PZL-PZ))) * 1.E20
-    END IF
+!!    p_fm(1:3) = 0.0 ! No Pfirsch-Schulter viscosity
 
-    ! Even when NBI is activated, any external parallel force concerning NBI
-    ! never acts on electrons and bulk ions. Force term due to NBI only appear
-    ! in LQb4.
+    ! p_grbm2 : <|nabla rho|^2/B^2>
+    !     Note: One may think that p_grbm2 = (<R^2>/I^2-<B^-2>)(I/dV/drho dpsi/dV)^2.
+    !           If the large aspect ratio appoximation is used with fipol=R_0 B_0 assumed,
+    !           however, <R^2>/I^2-<B^-2> is identically zero.
+    !           Calculating <|nabla rho|^2/B^2> directly in an equilibrium solver enables us
+    !           to precisely calculate the value, but p_grbm2 is used in NCLASS solely for
+    !           estimating the classical flux. In this sense, for the TASK/TX purpose, 
+    !           it does not matter how p_grbm2 is.
+    p_grbm2   = real(8.d0*(Pi*rr)**4*epsl**2*(2.d0+3.d0*epsl**2)/bbt(0)) ! Large aspect ratio approx.
+    p_grphi   = real(dPhidV(NR)) ! [V/m^3]
+    ! For orbit squeezing (Houlberg, PoP, 1997, Eq. (B2))
+    p_gr2phi  = real(p_gr2phi_in)
+
+    ! p_ngrth : n.grad(Theta) = <B^theta>/<B>
+    p_ngrth   = real(bthco(NR)/bbrt(NR)) ! [1/m]
+    do i = 1, m_i
+       grt_i(i)  = real(dTsdrho(i)) ! dTs/dV [keV/m^3]
+       do j = 1, m_z
+          grp_iz(i,j) = real(dPsdrho(i)) * 1.e20 ! dPs/dV [keV/m^6]
+       end do
+    end do
+
     fex_iz(1:3,1:mx_mi,1:mx_mz) = 0.0
 
-    CALL NCLASS( &
+    call NCLASS( &
 !     Input
          &      k_order,k_potato,m_i,m_z,c_den,c_potb,c_potl,p_b2, &
          &      p_bm2,p_eb,p_fhat,p_fm,p_ft,p_grbm2,p_grphi,p_gr2phi, &
@@ -492,121 +599,186 @@ contains
          &      m_s,jm_s,jz_s,p_bsjb,p_etap,p_exjb,calm_i,caln_ii, &
          &      capm_ii,capn_ii,bsjbp_s,bsjbt_s,dn_s,gfl_s,qfl_s, &
          &      sqz_s,upar_s,utheta_s,vn_s,veb_s,qeb_s,xi_s,ymu_s, &
-         &      chip_ss,chit_ss,dp_ss,dt_ss,iflag)
+         &      chip_ss,chit_ss,dp_ss,dt_ss,iflag,tau_ss)
 
-    IF(k_out >0 .and.k_out <= 7) THEN
-       p_eps = REAL(RL/RR)
-       p_q   = REAL(QL)
-       r0    = REAL(RR)
-       a0    = REAL(RAL)
-       e0    = REAL(1.D0)
-       bt0   = REAL(BphV(0))
-       q0l   = REAL(Q(0))
-       CALL NCLASS_CHECK(6,NR,k_out,k_order,m_i,m_z, &
+    if(k_out >0 .and.k_out <= 7) then
+       p_eps = real(epst(NR))
+       p_q   = real(Q(NR))
+       r0    = real(rr)
+       a0    = real(ra)
+       e0    = real(1.d0)
+       bt0   = real(fipol(0)/rr)
+       q0l   = real(Q(0))
+       call NCLASS_CHECK(6,NR,k_out,k_order,m_i,m_z, &
             &        p_fhat,p_grphi,amu_i,grt_i,temp_i,den_iz,grp_iz,p_eps,bt0, &
             &        m_s,jm_s,jz_s,p_bsjb, &
             &        p_etap,p_exjb,calm_i,caln_ii, &
             &        capm_ii,capn_ii,bsjbp_s,bsjbt_s,dn_s,gfl_s,qfl_s, &
             &        upar_s,utheta_s,vn_s,veb_s,qeb_s,xi_s,ymu_s, &
             &        chip_ss,chit_ss,dp_ss,dt_ss,iflag,ier_check)
-       IER = ier_check
-    ENDIF
+       ier = ier_check
+    end if
+       
+!    Check particle flux
+!    if(NR/=0.and.NT==500) write(6,*) rho(NR),(sum(gfl_s(1:2,1))+sum(gfl_s(4:5,1)))/vro(NR) ! w/o classical flux
+!    if(NR/=0.and.NT==500) write(6,*) rho(NR),sum(gfl_s(1:5,1))/vro(NR) ! total
+!    if(NR/=0.and.NT==500) write(6,*) rho(NR),gfl_s(4,1)/vro(NR) ! Ware
+!    if(NR/=0.and.NT==500) write(6,'(F10.7,5ES15.7)') rho(NR),(gfl_s(i,1)/vro(NR),i=1,5) ! breakdown
+!    write(6,*) rho(NR),gfl_s(4,1)*sdt(NR)*1.d-20,gfl_s(4,2)*sdt(NR)*1.d-20 ! Ware flux
+!    write(6,*) rho(NR),sum(gfl_s(1:5,1))*sdt(NR)*1.d-20,sum(gfl_s(1:5,2))*sdt(NR)*1.d-20 ! Particle flux
 
-!    write(6,*) r(NR)/ra,sum(gfl_s(1:5,1))*real(RAL)*1.E-20
-!    write(6,*) r(NR)/ra,(sum(gfl_s(1:2,1))+sum(gfl_s(4:5,1)))*real(RAL)*1.E-20
-
-    !     *** Takeover Parameters ***
+    !     *** Parameters to pass ***
 
     IF(k_potato == 0) THEN
        IF(iflag /= -1 .and. k_out > 0) THEN
-          WRITE(6,*) "XX iflag=",iflag
-          IER=1
-          RETURN
+          WRITE(6,'(A,I4,2X,A,I4)') "XX iflag=",iflag,"NR=",NR
+          ier=1
+          return
        ENDIF
     ELSE
-       IF(iflag /= 0 .and. k_out > 0) WRITE(6,*) "XX iflag=",iflag
+       IF(iflag /= 0 .and. k_out > 0) WRITE(6,'(A,I4,2X,A,I4)') "XX iflag=",iflag,"NR=",NR
     ENDIF
 
-    !   Bootstrap current
-    IF(Zeff == 1.D0) THEN
-       JBSout =-(  DBLE(bsjbt_s(1)) *(RAL * dTedrL/ PTeVL) &
-              &  + DBLE(bsjbp_s(1)) *(RAL * dPedrL/ PeVL) &
-              &  + DBLE(bsjbt_s(2)) *(RAL * dTidrL/ PTiVL) &
-              &  + DBLE(bsjbp_s(2)) *(RAL * dPidrL/ PiVL)) / BBL
-!!$       JBSout =-(+ DBLE(bsjbp_s(1)) *(RAL * dPedrL/ PeVL) &
-!!$              &  + DBLE(bsjbp_s(2)) *(RAL * dPidrL/ PiVL)) / BBL
-    ELSE
-       JBSout =-(  DBLE(bsjbt_s(1)) *(RAL * dTedrL/ PTeVL) &
-              &  + DBLE(bsjbp_s(1)) *(RAL * dPedrL/ PeVL) &
-              &  + DBLE(bsjbt_s(2)) *(RAL * dTidrL/ PTiVL) &
-              &  + DBLE(bsjbp_s(2)) *(RAL * dPidrL/ PiVL * (PZL*PZ-Zeff)/(PZ*(PZL-PZ))) &
-              &  + DBLE(bsjbt_s(3)) *(RAL * dTidrL/ PTiVL) &
-              &  + DBLE(bsjbp_s(3)) *(RAL * dPidrL/ PiVL * (Zeff-PZ**2)/(PZL*(PZL-PZ)))) / BBL
-    END IF
-    IF(k_potato == 0 .and. NR == 0) JBSout = 0.D0
+    !---   Bootstrap current
+    BJBSout =-sum(  real(bsjbt_s(1:m_i),8) *(dTsdrho(1:m_i) / temp_i(1:m_i)) &
+         &        + real(bsjbp_s(1:m_i),8) *(dPsdrho(1:m_i) / pres_i(1:m_i)))
+    IF(k_potato == 0 .and. NR == 0) BJBSout = 0.d0
 
-    !   Neoclassical resistivity
-    ETAout = DBLE(p_etap)
+    !---   Neoclassical resistivity
+    ETAout = real(p_etap,8)
 
-    !   Neoclassical viscosity (so-called "Heuristic closure")
-    !     T.A. Gianakon, S.E. Kruger, C.C. Hegna, PoP 9 (2002) 536, Eq.(12)
-    !     D.D. Schnack, et al., PoP 13 (2006) 058103, Eqs.(11),(88) and (89)
-    NueNC  = FSNC * DBLE(p_b2 * ymu_s(1,1,1)) / (PNeVL * 1.D20 * AME * BthVL**2)  ! [/s]
-    NuiNC  = FSNC * DBLE(p_b2 * ymu_s(1,1,2)) / (PNiVL * 1.D20 * AMI * BthVL**2)  ! [/s]
-    Nue2NC = FSNC * DBLE(ymu_s(1,2,1)) * BphVL / (PNeVL * 1.D20 * AME * BthVL**2) ! [/Ts]
-    Nui2NC = FSNC * DBLE(ymu_s(1,2,2)) * BphVL / (PNiVL * 1.D20 * AMI * BthVL**2) ! [/Ts]
-
-    !   Neoclassical thermal diffusivity (Diagonal effect only)
-    ChiNCpel = ChiNC * DBLE(chip_ss(1,1))
-    ChiNCtel = ChiNC * DBLE(chit_ss(1,1))
-    ChiNCpil = ChiNC * DBLE(chip_ss(2,2))
-    ChiNCtil = ChiNC * DBLE(chit_ss(2,2))
-    if(ChiNCpel < 0.d0) ChiNCpel = 0.d0
-    if(ChiNCtel < 0.d0) ChiNCtel = 0.d0
-    if(ChiNCpil < 0.d0) ChiNCpil = 0.d0
-    if(ChiNCtil < 0.d0) ChiNCtil = 0.d0
-
-    !   Heat flux contribution (i.e. coef * (2 q_theta / 5 p))
-    FQethL = - FSNCPL * DBLE(p_b2 * ymu_s(1,2,1)) / AME / BthVL * sum(utheta_s(2,1:2,1)) ! [/m^2s^2]
-    FQithL = - FSNCPL * DBLE(p_b2 * ymu_s(1,2,2)) / AMI / BthVL * sum(utheta_s(2,1:2,2)) ! [/m^2s^2]
-
-    !   Contribution from heat flux to neoclassical resistivity
-    ETA_heat = FSNCPL * DBLE(p_b2 / p_eb * ymu_s(1,2,1) * utheta_s(2,2,1)) / (AEE * PNeVL * 1.D20)
-    !   Contribution from heat flux to bootstrap current
-    !   ("utheta_s - upar_s/p_b2" is calculated so as to extract pure Ti' effect from utheta_s.)
-    JBS_heat = FSNCPL * DBLE(ymu_s(1,2,1) * (p_b2 * utheta_s(2,1,1) - upar_s(2,1,1))) &
-         &   * AEE * BBL / (AME * BphVL)
-
-    !   Poloidal flows by NCLASS for graphics
-    if(NR == 0) then
-       Ueth_NC(NR,1:2) = 0.d0
-       Uith_NC(NR,1:2) = 0.d0
+    !---   Neoclassical thermal diffusivity (Diagonal effect only)
+    !     chi*_ss = <|\nabla \rho|^2>*chi_NC, where chi_NC is in unit of [m^2/s].
+    !     chi*_ss = <|\nabla V|^2>*chi_NC if rho = V is assumed in NCLASS.
+    if( NR /= 0 ) then
+       do i = 1, m_i
+          ChiNCpl(i) = ChiNC * real(chip_ss(i,i),8) / sst(NR)
+          ChiNCtl(i) = ChiNC * real(chit_ss(i,i),8) / sst(NR)
+       end do
     else
-       Ueth_NC(NR,1) = dble(utheta_s(1,1,1)) * BthVL
-       Ueth_NC(NR,2) = dble(utheta_s(1,2,1)) * BthVL
-       Uith_NC(NR,1) = dble(utheta_s(1,1,2)) * BthVL
-       Uith_NC(NR,2) = dble(utheta_s(1,2,2)) * BthVL
+       ChiNCpl(:) = 0.d0
+       ChiNCtl(:) = 0.d0
     end if
+!!$    where (ChiNCpl < 0.d0) ChiNCpl = 0.d0
+!!$    where (ChiNCtl < 0.d0) ChiNCtl = 0.d0
 
-    !   Comparison between NCLASS output and TX result or assumption
-    !      in terms of poloidal flows
-    !                  ^^^^^^^^^^^^^^
-    !   (This comparison is valid when FSNCPL = 1.)
-!!$    if(nr /= 0) then
-!!$       ! Electron particle flow
-!!$       write(6,*) rho(nr), sum(utheta_s(1,1:2,1)), UethV(nr) / BthVL
-!!$       ! Electron heat flow (In this case, contribution of parallel electric field is 
-!!$       !    not negligible; hence analytic formula is compared to utheta_s(2,1,1) only.)
-!!$       write(6,*) rho(nr), utheta_s(2,1,1), - BphVL / BthVL / AEE / p_b2 * dTedrL * rKeV
-!!$       ! Ion particle flow
-!!$       write(6,*) rho(nr), sum(utheta_s(1,1:2,2)), UithV(nr) / BthVL
-!!$       ! Ion heat flow
-!!$       write(6,*) rho(nr), sum(utheta_s(2,1:2,2)), BphVL / BthVL / (PZ * AEE) / p_b2 &
-!!$            &                                      * dTidrL * rKeV
-!!$    end if
+    !---   Poloidal flows by NCLASS for graphics: uthhat(moment, from what, species)
+    do i = 1, m_i
+       UsthNCL(NR,i,1) = real(utheta_s(1,1,i),8) ! (particle flow, p' T')
+       UsthNCL(NR,i,2) = real(utheta_s(1,2,i),8) ! (particle flow, <E.B>)
+    end do
 
-    RETURN
-  end SUBROUTINE TX_NCLASS
+!    write(6,*) rho(nr),utheta_s(1,1,2)+utheta_s(1,2,2),Var(NR,2)%Uthhat
+!    write(6,*) rho(nr),upar_s(1,1,2)+upar_s(1,2,2),Var(NR,2)%BUpar
+
+    !---   Neoclassical viscosities
+
+!    if(NR /= 0) then
+       do i = 1, m_i ! species
+          do j = 1, k_order
+             do k = 1, k_order
+                xmu(NR,i,j,k) = FSNC(1) * real(ymu_s(j,k,i),8)
+             end do
+          end do
+       end do
+!    else
+!       xmu(NR,:,:,:) = 0.d0
+!    end if
+
+    !---   Friction coefficients normalized by m_a n_a : lab(NR,i,j,k,l)/(m_a n_a)
+
+    do i = 1, m_i ! species
+       do j = 1, m_i ! species
+          do l = 1, k_order
+             do k = 1, k_order
+                if( l == k ) then ! l + k = even
+                   sgn_xi_s = xi_s(i) * FSNC(2)
+                else              ! l + k = odd
+                   sgn_xi_s =-xi_s(i) * FSNC(2)
+                end if
+                if( i == j ) then
+                   lab(NR,i,j,k,l) = sgn_xi_s * ( calm_i(k,l,jm_s(i)) + xi_s(j) * caln_ii(k,l,i,j) )
+                else
+                   lab(NR,i,j,k,l) = sgn_xi_s * (                       xi_s(j) * caln_ii(k,l,i,j) )
+                end if
+                ! normalization: divided by m_i n_i
+                lab(NR,i,j,k,l) = lab(NR,i,j,k,l) / (amas(i) * amp * Var(NR,i)%n * 1.D20)
+!                write(6,*) i,k,k,l,jm_s(i),real(lab(NR,i,j,k,l))
+             end do
+          end do
+       end do
+    end do
+!!$    !---   Sanity check
+!!$    write(6,*) lab(NR,1,1,1,1)*tau_ss(1,1)/(amas(1)*amp*Var(nr,1)%n*1.d20),-zeff ! l_11^ee
+!!$    write(6,*) lab(NR,1,2,1,1)*tau_ss(1,1)/(amas(1)*amp*Var(nr,1)%n*1.d20),Var(nr,2)%n/Var(nr,1)%n ! l_11^ei
+!!$    write(6,*) lab(NR,1,1,1,2),lab(NR,1,1,2,1),1.5d0*lab(NR,1,1,1,1) ! l_12^ee
+!!$    write(6,*) lab(NR,1,2,1,2),0.d0 ! l_12^ei
+!!$    write(6,*) lab(NR,1,2,2,1),1.5d0*lab(NR,1,2,1,1) ! l_21^ei
+!!$    write(6,*) lab(NR,1,1,2,2)*tau_ss(1,1)/(amas(1)*amp*Var(nr,1)%n*1.d20),-(sqrt(2.d0)+13.d0/4.d0*zeff) ! l_22^ee
+!!$    write(6,*) lab(NR,1,2,2,2),0.d0 ! l_22^ei
+!!$    stop
+!!$    !---   Correction for exact symmetry of friction coefficients
+!!$    lab(NR,2,1,1,1) = lab(NR,1,2,1,1)*(amas(1)*Var(NR,1)%n)/(amas(2)*Var(NR,2)%n)
+!!$    lab(NR,2,1,2,1) = lab(NR,1,2,1,2)*(amas(1)*Var(NR,1)%n)/(amas(2)*Var(NR,2)%n)
+!!$    lab(NR,2,1,2,2) = lab(NR,1,2,2,2)*(amas(1)*Var(NR,1)%n)/(amas(2)*Var(NR,2)%n)
+
+    !---   Beam neoclassical viscosity
+
+    do j = 1, k_order
+       xmuf(NR,j) = FSNCB(1) * 0.d0
+    end do
+
+    !---   Beam friction coefficients
+    !     laf : thermal and fast,   normalized by m_a n_a
+    !     lfb : fast and thermal,   normalized by m_e n_e
+    !     lff : fast and fast,      normalized by m_e n_e
+
+    laf(NR,1:m_i,1:2,1:2) = 0.d0
+    lfb(NR,1:m_i,1:2,1:2) = 0.d0
+    lff(NR,1:2,1:2) = 0.d0
+
+    zp43 = 0.75d0 * sqrt(pi)
+    Vte = sqrt(2.d0 * abs(Var(NR,1)%T) * rKilo / (amas(1) * amqp))
+    Vti = sqrt(2.d0 * abs(Var(NR,2)%T) * rKilo / (amas(2) * amqp))
+    Wc3 = zp43 * Vte*Vte*Vte * amas(1)/amb * (achg(2)*achg(2) * Var(NR,2)%n / Var(NR,1)%n)
+    Vc3 = Wc3 * (achg(2)*achg(2) * Var(NR,2)%n / amas(2)) / (achg(2)*achg(2) * Var(NR,2)%n) * amb
+    Vbc3 = Vb*Vb*Vb+Vc3
+    !   --- electron and beam ---
+    laf(NR,1,1,1)   = achgb*achgb * PNbV(NR) / Var(NR,1)%n / tau_ss(1,1)       ! l_11^ef
+    lab(NR,1,1,1,1) = lab(NR,1,1,1,1) - laf(NR,1,1,1)                          ! l_11^ee corrected
+    lfb(NR,1,1,1)   = laf(NR,1,1,1)                                            ! l_11^fe
+    laf(NR,1,2,1)   = 1.5d0 * laf(NR,1,1,1)                                    ! l_21^ef
+    lab(NR,1,1,2,1) = lab(NR,1,1,2,1) - laf(NR,1,2,1)                          ! l_21^ee corrected
+    !   --- ion and beam ---
+    if( Vc3 /= 0.d0 ) then                                                     ! l_11^if
+       laf(NR,2,1,1) = zp43*(achgb*achgb*PNbV(NR)/(achg(2)*achg(2)*Var(NR,2)%n)) &
+            & *(1.d0+amas(2)/amb)/log(Vbc3/Vc3)*(Vti*Vti*Vti)/Vc3 / tau_ss(2,2)
+    else
+       laf(NR,2,1,1) = 0.d0
+    end if
+    lfb(NR,2,1,1)   = laf(NR,2,1,1) * (amas(2)*Var(NR,2)%n*tau_ss(1,1) &
+         &                           /(amas(1)*Var(NR,1)%n*tau_ss(2,2)))        ! l_11^fi
+    lab(NR,2,2,1,1) = lab(NR,2,2,1,1) - laf(NR,2,1,1)                           ! l_11^ii corrected
+    !   --- beam and beam ---
+    lff(NR,1,1) = - lfb(NR,1,1,1) - lfb(NR,2,1,1)                               ! l_11^ff
+
+    laf = laf * FSNCB(2)
+    lfb = lfb * FSNCB(2)
+    lff = lff * FSNCB(2)
+
+    do i = 1, m_i
+       !---   Parallel heat flows: 2<B q_s,para>/(5p_s)
+       do j = 1, 2
+          BusparNCL(NR,i,j) = real(sum(upar_s(j,1:2,i)),8)
+       end do
+       !---   <B.nabla.Pi> for viscous heating
+       BnablaPi(NR,i) = p_b2 * sum(ymu_s(1,1:2,i)*(utheta_s(1:2,1,i)+utheta_s(1:2,2,i)))
+       !---   Particle flux : < Gamma . nabla psi >
+       gflux(NR,i,3) = sum(gfl_s(1:5,i)) * sdt(NR)
+    end do
+
+    return
+  end subroutine tx_nclass
 
 !***********************************************************
 !
@@ -614,7 +786,7 @@ contains
 !
 !***********************************************************
 
-  SUBROUTINE NCLASS_CHECK(nout,nr,k_out,k_order,m_i,m_z, &
+  subroutine nclass_check(nout,nr,k_out,k_order,m_i,m_z, &
        &            p_fhat,p_grphi,amu_i,grt_i,temp_i,den_iz,grp_iz,p_eps,bt0, &
        &            m_s,jm_s,jz_s,p_bsjb, &
        &            p_etap,p_exjb,calm_i,caln_ii, &
@@ -622,22 +794,22 @@ contains
        &            upar_s,utheta_s,vn_s,veb_s,qeb_s,xi_s,ymu_s, &
        &            chip_ss,chit_ss,dp_ss,dt_ss,iflag,ier)
 
-    INCLUDE 'nclass/pamx_mi.inc'
-    INCLUDE 'nclass/pamx_ms.inc'
-    INCLUDE 'nclass/pamx_mz.inc'
-    INCLUDE 'txncls.inc'
+    include 'nclass/pamx_mi.inc'
+    include 'nclass/pamx_ms.inc'
+    include 'nclass/pamx_mz.inc'
+    include 'txncls.inc'
     !Declaration of local variables
-    CHARACTER :: label*120
-    INTEGER(4), intent(in)  :: nr, nout, k_out
+    character :: label*120
+    integer(4), intent(in)  :: nr, nout, k_out
     integer(4), intent(out) :: ier
-    INTEGER(4) :: i, im, iz, iza, j, jm, jza, k, l
-    INTEGER(4) :: idum(8)
-    REAL(4)    :: bt0, bpol, btor, btot, p_eps, ppr, uthai
-    REAL(4)    :: dq_s(mx_ms), vq_s(mx_ms)
-    REAL(4)    :: z_coulomb, z_electronmass, z_j7kv, z_mu0, z_pi, z_protonmass
-    REAL(4)    :: dum(8), edum(8), rdum(8)
+    integer(4) :: i, im, iz, iza, j, jm, jza, k, l
+    integer(4) :: idum(8)
+    real(4)    :: bt0, bpol, btor, btot, p_eps, ppr, uthai
+    real(4)    :: dq_s(mx_ms), vq_s(mx_ms)
+    real(4)    :: z_coulomb, z_electronmass, z_j7kv, z_mu0, z_pi, z_protonmass
+    real(4)    :: dum(8), edum(8), rdum(8)
     !Declaration of functions
-    REAL(4)    ::  RARRAY_SUM
+    real(4)    ::  RARRAY_SUM
 
     !Physical and conversion constants
     z_coulomb=1.6022e-19
@@ -654,16 +826,16 @@ contains
        !Check warning flags
        IF(iflag == -1) THEN
           label='WARNING:NCLASS-no potato orbit viscosity'
-          CALL WRITE_LINE(nout,label,0,0)
+          call WRITE_LINE(nout,label,0,0)
        ELSEIF(iflag == -2) THEN
           label='WARNING:NCLASS-Pfirsch-Schluter viscosity'
-          CALL WRITE_LINE(nout,label,0,0)
+          call WRITE_LINE(nout,label,0,0)
        ELSEIF(iflag == -3) THEN
           label='WARNING:NCLASS-no banana viscosity'
-          CALL WRITE_LINE(nout,label,0,0)
+          call WRITE_LINE(nout,label,0,0)
        ELSEIF(iflag == -4) THEN
           label='WARNING:NCLASS-no viscosity'
-          CALL WRITE_LINE(nout,label,0,0)
+          call WRITE_LINE(nout,label,0,0)
        ENDIF
     END IF
     !Check error flags
@@ -672,25 +844,25 @@ contains
           IF(iflag == 1) THEN
              label='ERROR:NCLASS-k_order must be 2 or 3, k_order='
              idum(1)=k_order
-             CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+             call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           ELSEIF(iflag == 2) THEN
              label='ERROR:NCLASS-require 1<m_i<mx_mi, m_i='
              idum(1)=m_i
-             CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+             call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           ELSEIF(iflag == 3) THEN
              label='ERROR:NCLASS-require 0<m_z<mx_mz, m_z='
              idum(1)=m_z
-             CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+             call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           ELSEIF(iflag == 4) THEN
              label='ERROR:NCLASS-require 0<m_s<mx_ms, m_s='
              idum(1)=m_s
-             CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+             call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           ELSEIF(iflag == 5) THEN
              label='ERROR:NCLASS-inversion of flow matrix failed'
-             CALL WRITE_LINE(nout,label,0,0)
+             call WRITE_LINE(nout,label,0,0)
           ELSEIF(iflag == 6) THEN
              label='ERROR:NCLASS-trapped fraction must be 0.0<p_ft<1.0'
-             CALL WRITE_LINE(nout,label,0,0)
+             call WRITE_LINE(nout,label,0,0)
           ENDIF
        ENDIF
        WRITE(6,*) 'XX NCLASS_CHECK: non zero iflag: ',iflag
@@ -701,13 +873,13 @@ contains
     IF(k_out >= 4) THEN
        !  Species identification
        label='     *** Species Identification ***'
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Isotope     Species      Charge        Mass'// &
             &'     Density Temperature  Chg Factor'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -           -     Coulomb         AMU'// &
             &'       /m**3         keV           -'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           im=jm_s(i)
           iz=jz_s(i)
@@ -719,150 +891,150 @@ contains
           rdum(2)=den_iz(im,iza)
           rdum(3)=temp_i(im)
           rdum(4)=xi_s(i)
-          CALL WRITE_IR(nout,3,idum,4,rdum,2)
+          call WRITE_IR(nout,3,idum,4,rdum,2)
        ENDDO
        !  Friction coefficients
        label='     *** Friction Coefficients ***'
-       CALL WRITE_LINE(nout,label,2,0)
+       call WRITE_LINE(nout,label,2,0)
        DO im=1,m_i
           DO jm=1,m_i
-             CALL WRITE_LINE(nout,' ',0,0)            
+             call WRITE_LINE(nout,' ',0,0)            
              label='  Isotopes ='
              idum(1)=im
              idum(2)=jm
-             CALL WRITE_LINE_IR(nout,label,2,idum,0,rdum,0)           
+             call WRITE_LINE_IR(nout,label,2,idum,0,rdum,0)           
              !           Mkl
              label='  Mkl(-) ='
-             CALL WRITE_LINE(nout,label,0,0)           
+             call WRITE_LINE(nout,label,0,0)           
              DO k=1,k_order
                 DO l=1,k_order
                    rdum(l)=capm_ii(k,l,im,jm)
                 ENDDO
-                CALL WRITE_IR(nout,0,idum,k_order,rdum,2)           
+                call WRITE_IR(nout,0,idum,k_order,rdum,2)           
              ENDDO
              !           Nkl
              label='  Nkl(-) ='
-             CALL WRITE_LINE(nout,label,0,0)           
+             call WRITE_LINE(nout,label,0,0)           
              DO k=1,k_order
                 DO l=1,k_order
                    rdum(l)=capn_ii(k,l,im,jm)
                 ENDDO
-                CALL WRITE_IR(nout,0,idum,k_order,rdum,2)           
+                call WRITE_IR(nout,0,idum,k_order,rdum,2)           
              ENDDO
           ENDDO
        ENDDO
        !  Reduced friction coefficients
        label='     *** Reduced Friction Coefficients ***'
-       CALL WRITE_LINE(nout,label,2,0)
+       call WRITE_LINE(nout,label,2,0)
        !       cal(M)
        DO im=1,m_i
-          CALL WRITE_LINE(nout,' ',0,0)
+          call WRITE_LINE(nout,' ',0,0)
           label='  calMij (kg/m**3/s) for Isotope ='
           idum(1)=im
-          CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)           
+          call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)           
           DO j=1,k_order
              DO k=1,k_order
                 rdum(k)=calm_i(j,k,im)
              ENDDO
-             CALL WRITE_IR(nout,0,idum,k_order,rdum,2)           
+             call WRITE_IR(nout,0,idum,k_order,rdum,2)           
           ENDDO
        ENDDO
        !       cal(N)
        DO im=1,m_i
-          CALL RARRAY_ZERO(3,dum)
+          call RARRAY_ZERO(3,dum)
           DO jm=1,m_i
-             CALL WRITE_LINE(nout,' ',0,0)
+             call WRITE_LINE(nout,' ',0,0)
              label='  calNij (kg/m**3/s) for Isotopes ='
              idum(1)=im
              idum(2)=jm
-             CALL WRITE_LINE_IR(nout,label,2,idum,0,rdum,0)           
+             call WRITE_LINE_IR(nout,label,2,idum,0,rdum,0)           
              DO k=1,k_order
                 dum(k)=dum(k)-caln_ii(k,1,im,jm)
                 DO l=1,k_order
                    rdum(l)=caln_ii(k,l,im,jm)
                 ENDDO
-                CALL WRITE_IR(nout,0,idum,k_order,rdum,2)           
+                call WRITE_IR(nout,0,idum,k_order,rdum,2)           
              ENDDO
           ENDDO
           !         Momentum check
-          CALL WRITE_LINE(nout,' ',0,0)
+          call WRITE_LINE(nout,' ',0,0)
           label='Momentum check for Isotope ='
-          CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+          call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           label='  sum_b[-calNk1] (kg/m**3/s) ='
-          CALL WRITE_LINE_IR(nout,label,0,idum,k_order,dum,2)           
+          call WRITE_LINE_IR(nout,label,0,idum,k_order,dum,2)           
           label='  calMk1 (kg/m**3/s)         ='
-          CALL WRITE_LINE_IR(nout,label,0,idum,k_order,calm_i(1,1,im),2)           
+          call WRITE_LINE_IR(nout,label,0,idum,k_order,calm_i(1,1,im),2)           
           label='  Difference ='
           DO k=1,k_order
              dum(k+3)=dum(k)-calm_i(k,1,im)
           ENDDO
-          CALL WRITE_LINE_IR(nout,label,0,idum,k_order,dum(4),2)           
+          call WRITE_LINE_IR(nout,label,0,idum,k_order,dum(4),2)           
        ENDDO
        !  Normalized viscosities
        label='     *** Normalized Viscosities ***'
-       CALL WRITE_LINE(nout,label,2,0)
+       call WRITE_LINE(nout,label,2,0)
        DO i=1,m_s
-          CALL WRITE_LINE(nout,' ',0,0)
+          call WRITE_LINE(nout,' ',0,0)
           label='  muij (kg/m**3/s) for Species ='
           idum(1)=i
-          CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+          call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           DO k=1,k_order
              DO l=1,k_order
                 rdum(l)=ymu_s(k,l,i)
              ENDDO
-             CALL WRITE_IR(nout,0,idum,k_order,rdum,2)           
+             call WRITE_IR(nout,0,idum,k_order,rdum,2)           
           ENDDO
        ENDDO
        !  Normalized parallel flows
        label='     *** Normalized Parallel Flows ***'
-       CALL WRITE_LINE(nout,label,2,0)
+       call WRITE_LINE(nout,label,2,0)
        DO i=1,m_s
-          CALL WRITE_LINE(nout,' ',0,0)
+          call WRITE_LINE(nout,' ',0,0)
           label='  upar_ij (T*m/s) for Species ='
           idum(1)=i
-          CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+          call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           DO j=1,k_order
              DO k=1,k_order
                 rdum(k)=upar_s(j,k,i)
              ENDDO
-             CALL WRITE_IR(nout,0,idum,k_order,rdum,2)           
+             call WRITE_IR(nout,0,idum,k_order,rdum,2)           
           ENDDO
        ENDDO
        !  Normalized poloidal flows
        label='     *** Normalized Poloidal Flows ***'
-       CALL WRITE_LINE(nout,label,2,0)
+       call WRITE_LINE(nout,label,2,0)
        DO i=1,m_s
-          CALL WRITE_LINE(nout,' ',0,0)
+          call WRITE_LINE(nout,' ',0,0)
           label='  utheta_ij (m/s/T) for Species ='
           idum(1)=i
-          CALL WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
+          call WRITE_LINE_IR(nout,label,1,idum,0,rdum,0)
           DO j=1,k_order
              DO k=1,k_order
                 rdum(k)=utheta_s(j,k,i)
              ENDDO
-             CALL WRITE_IR(nout,0,idum,k_order,rdum,2)           
+             call WRITE_IR(nout,0,idum,k_order,rdum,2)           
           ENDDO
        ENDDO
        !  Radial particle fluxes
        label='     *** Radial Particle Fluxes ***'
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species          BP          PS          CL'// &
             &'       <E.B>         src       total'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -     /m**2/s     /m**2/s     /m**2/s'// &
             &'     /m**2/s     /m**2/s     /m**2/s'
-       CALL WRITE_LINE(nout,label,0,0)
-       CALL RARRAY_ZERO(6,dum)
-       CALL RARRAY_ZERO(6,edum)
+       call WRITE_LINE(nout,label,0,0)
+       call RARRAY_ZERO(6,dum)
+       call RARRAY_ZERO(6,edum)
        !       Load into rdum the five flux components and total
        !       Load into dum the z-weighted + charge (ion) components
        !       Load into edum the z-weighted - charge (electron) components 
        DO i=1,m_s
           iz=jz_s(i)
           idum(1)=i
-          CALL RARRAY_COPY(5,gfl_s(1,i),1,rdum,1)
+          call RARRAY_COPY(5,gfl_s(1,i),1,rdum,1)
           rdum(6)=RARRAY_SUM(5,rdum,1)
-          CALL WRITE_IR(nout,1,idum,6,rdum,2)           
+          call WRITE_IR(nout,1,idum,6,rdum,2)           
           DO k=1,5
              IF(iz > 0) THEN
                 dum(k)=dum(k)+iz*gfl_s(k,i)
@@ -878,28 +1050,28 @@ contains
        ENDDO
        !  Ambipolarity check
        label='     *** Ambipolarity Check ***'
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='  Sum_i Z_i*Gamma_i ='
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        idum(1)=0
-       CALL WRITE_IR(nout,1,idum,6,dum,2)           
+       call WRITE_IR(nout,1,idum,6,dum,2)           
        label='  Sum_e Z_e*Gamma_e ='
-       CALL WRITE_LINE(nout,label,0,0)
-       CALL WRITE_IR(nout,1,idum,6,edum,2)           
+       call WRITE_LINE(nout,label,0,0)
+       call WRITE_IR(nout,1,idum,6,edum,2)           
        label='  Difference ='
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO k=1,6
           rdum(k)=edum(k)+dum(k)
        ENDDO
-       CALL WRITE_IR(nout,1,idum,6,rdum,2)
+       call WRITE_IR(nout,1,idum,6,rdum,2)
        !  Particle transport is returned in three forms
        !  Particle flux consistency check
        label='     *** Particle Flux Consistency Check ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species       gfl_s   dn_s,vn_s   dp_s,dt_s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -     /m**2/s     /m**2/s     /m**2/s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           im=jm_s(i)
           iza=IABS(jz_s(i))
@@ -918,61 +1090,61 @@ contains
                   & -dp_ss(j,i)*grp_iz(jm,jza)/den_iz(jm,jza)/temp_i(jm)
           ENDDO
           rdum(3)=(rdum(3)+veb_s(i))*den_iz(im,iza)
-          CALL WRITE_IR(nout,1,idum,3,rdum,2)
+          call WRITE_IR(nout,1,idum,3,rdum,2)
        ENDDO
        !  Particle diffusion, velocity
        label='     *** Particle Diffusion, Velocity ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species         D_s         V_s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -      m**2/s         m/s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           im=jm_s(i)
           iza=IABS(jz_s(i))
           idum(1)=i
           rdum(1)=dn_s(i)
           rdum(2)=vn_s(i)+veb_s(i)+gfl_s(5,i)/den_iz(im,iza)
-          CALL WRITE_IR(nout,1,idum,2,rdum,2)
+          call WRITE_IR(nout,1,idum,2,rdum,2)
        ENDDO
        !  Particle diffusivity matrices
        !    On p'/p           
        label='     *** Particle Diffusivity Matrices ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species    on dp/dr ... by Species'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -      m**2/s ...'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           idum(1)=i
-          CALL WRITE_IR(nout,1,idum,m_s,dp_ss(1,i),2)
+          call WRITE_IR(nout,1,idum,m_s,dp_ss(1,i),2)
        ENDDO
        !    On T'/T
        label='     Species    on dT/dr ... by Species'
-       CALL WRITE_LINE(nout,label,1,0)
+       call WRITE_LINE(nout,label,1,0)
        label='           -      m**2/s ...'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           idum(1)=i
-          CALL WRITE_IR(nout,1,idum,m_s,dt_ss(1,i),2)
+          call WRITE_IR(nout,1,idum,m_s,dt_ss(1,i),2)
        ENDDO
        !  Radial conduction fluxes
        label='     *** Radial Conduction Fluxes ***'
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species          BP          PS          CL'// &
             &'       <E.B>         src       total'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -      w/m**2      w/m**2      w/m**2'// &
             &'      w/m**2      w/m**2      w/m**2'
-       CALL WRITE_LINE(nout,label,0,0)
-       CALL RARRAY_ZERO(6,dum)
-       CALL RARRAY_ZERO(6,edum)
+       call WRITE_LINE(nout,label,0,0)
+       call RARRAY_ZERO(6,dum)
+       call RARRAY_ZERO(6,edum)
        DO i=1,m_s
           iz=jz_s(i)
           idum(1)=i
-          CALL RARRAY_COPY(5,qfl_s(1,i),1,rdum,1)
+          call RARRAY_COPY(5,qfl_s(1,i),1,rdum,1)
           rdum(6)=RARRAY_SUM(5,qfl_s(1,i),1)
-          CALL WRITE_IR(nout,1,idum,6,rdum,2)           
+          call WRITE_IR(nout,1,idum,6,rdum,2)           
           DO k=1,5
              IF(iz > 0) THEN
                 dum(k)=dum(k)+qfl_s(k,i)
@@ -988,22 +1160,22 @@ contains
        ENDDO
        !     Total electron radial conduction flux
        label='  Sum of electron conduction fluxes ='
-       CALL WRITE_LINE(nout,label,1,0)
+       call WRITE_LINE(nout,label,1,0)
        idum(1)=0
-       CALL WRITE_IR(nout,1,idum,6,edum,2)
+       call WRITE_IR(nout,1,idum,6,edum,2)
        !     Total ion radial conduction flux
        label='  Sum of ion conduction fluxes ='
-       CALL WRITE_LINE(nout,label,1,0)
+       call WRITE_LINE(nout,label,1,0)
        idum(1)=0
-       CALL WRITE_IR(nout,1,idum,6,dum,2)
+       call WRITE_IR(nout,1,idum,6,dum,2)
        !  Heat conduction is returned in two forms, add diagonal form
        !  Heat flux consistency check
        label='     *** Heat Flux Consistency Check ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species       qfl_s   dq_s,vq_s,  cp_s,ct_s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -      w/m**2      w/m**2      w/m**2'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           im=jm_s(i)
           iza=IABS(jz_s(i))
@@ -1026,26 +1198,26 @@ contains
                   &                      /den_iz(jm,jza)/temp_i(jm)
           ENDDO
           rdum(3)=(rdum(3)+qeb_s(i))*den_iz(im,iza)*temp_i(im)*z_j7kv
-          CALL WRITE_IR(nout,1,idum,3,rdum,2)
+          call WRITE_IR(nout,1,idum,3,rdum,2)
        ENDDO
        !  Heat conduction, velocity
        label='     *** Heat Conduction, Velocity ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species         X_s         V_s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -      m**2/s         m/s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           idum(1)=i
           rdum(1)=dq_s(i)
           rdum(2)=vq_s(i)
-          CALL WRITE_IR(nout,1,idum,2,rdum,2)
+          call WRITE_IR(nout,1,idum,2,rdum,2)
        ENDDO
        !     Effective ion heat conduction, velocity
        label='  Effective ion conduction, velocity ='
-       CALL WRITE_LINE(nout,label,1,0)
+       call WRITE_LINE(nout,label,1,0)
        idum(1)=0
-       CALL RARRAY_ZERO(4,rdum)
+       call RARRAY_ZERO(4,rdum)
        DO i=1,m_s
           im=jm_s(i)
           iz=jz_s(i)
@@ -1060,38 +1232,38 @@ contains
        ENDDO
        rdum(1)=rdum(1)/rdum(3)
        rdum(2)=(rdum(2)+rdum(4))/rdum(3)
-       CALL WRITE_IR(nout,1,idum,2,rdum,2)
+       call WRITE_IR(nout,1,idum,2,rdum,2)
        !  Thermal diffusivity matrices
        !    On p'/p           
        label='     *** Thermal Diffusivity Matrices ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species    on dp/dr ... by Species'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -      m**2/s ...'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           idum(1)=i
-          CALL WRITE_IR(nout,1,idum,m_s,chip_ss(1,i),2)
+          call WRITE_IR(nout,1,idum,m_s,chip_ss(1,i),2)
        ENDDO
        !    On T'/T
        label='     Species    on dT/dr ... by Species'
-       CALL WRITE_LINE(nout,label,1,0)
+       call WRITE_LINE(nout,label,1,0)
        label='           -      m**2/s ...'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           idum(1)=i
-          CALL WRITE_IR(nout,1,idum,m_s,chit_ss(1,i),2)
+          call WRITE_IR(nout,1,idum,m_s,chit_ss(1,i),2)
        ENDDO
        !  Radial energy (conduction+convection) fluxes
        label='     *** Radial Energy (Cond+Conv) Fluxes ***'
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species    ban-plat          PS   classical'// &
             &'       <E.B>  extern src       total'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -      w/m**2      w/m**2      w/m**2'// &
             &'      w/m**2      w/m**2      w/m**2'
-       CALL WRITE_LINE(nout,label,0,0)
-       CALL RARRAY_ZERO(6,dum)
+       call WRITE_LINE(nout,label,0,0)
+       call RARRAY_ZERO(6,dum)
        DO i=1,m_s
           idum(1)=i
           im=jm_s(i)
@@ -1100,7 +1272,7 @@ contains
              rdum(k)=qfl_s(k,i)+2.5*gfl_s(k,i)*temp_i(im)*z_j7kv
           ENDDO
           rdum(6)=RARRAY_SUM(5,rdum,1)
-          CALL WRITE_IR(nout,1,idum,6,rdum,2)           
+          call WRITE_IR(nout,1,idum,6,rdum,2)           
           IF(iz > 0) THEN
              DO k=1,5
                 dum(k)=dum(k)+qfl_s(k,i)+2.5*gfl_s(k,i)*temp_i(im)*z_j7kv
@@ -1110,17 +1282,17 @@ contains
        ENDDO
        !     Total ion radial energy flux
        label='  Sum of ion energy fluxes ='
-       CALL WRITE_LINE(nout,label,1,0)
+       call WRITE_LINE(nout,label,1,0)
        idum(1)=0
-       CALL WRITE_IR(nout,1,idum,6,dum,2)           
+       call WRITE_IR(nout,1,idum,6,dum,2)           
        !  Bootstrap current is returned in two forms
        !  Bootstrap current consistency check
        label='     *** Bootstrap Current Consistency Check ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='      p_bsjb   dp_s,dt_s'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='    A*T/m**2    A*T/m**2'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        !    Total bootstrap current
        rdum(1)=p_bsjb
        !    Bootstrap current summed over T' and p' components
@@ -1132,44 +1304,44 @@ contains
                & -bsjbp_s(i)*grp_iz(im,iza) &
                &               /den_iz(im,iza)/temp_i(im)
        ENDDO
-       CALL WRITE_IR(nout,0,idum,2,rdum,2)
+       call WRITE_IR(nout,0,idum,2,rdum,2)
        !  Bootstrap current arrays
        !    On p'/p           
        label='     *** Bootstrap Current Arrays ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species    on dp/dr    on dT/dr'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -    A*T/m**2    A*T/m**2'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        DO i=1,m_s
           idum(1)=i
           rdum(1)=bsjbp_s(i)
           rdum(2)=bsjbt_s(i)
-          CALL WRITE_IR(nout,1,idum,2,rdum,2)
+          call WRITE_IR(nout,1,idum,2,rdum,2)
        ENDDO
        !  Current response to external source
        label='     *** Bootstrap and External Source Current ***'           
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='   Bootstrap    External       Total'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='    A*T/m**2    A*T/m**2    A*T/m**2'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        rdum(1)=p_bsjb
        rdum(2)=p_exjb
        rdum(3)=rdum(1)+rdum(2)
-       CALL WRITE_IR(nout,0,idum,3,rdum,2)
+       call WRITE_IR(nout,0,idum,3,rdum,2)
        !  Flow velocities on outside midplane
        label='     *** Flow Velocities on Outside Midplane ***'
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='     Species       v-tor       v-pol       v-par'// &
             &'      v-perp'
-       CALL WRITE_LINE(nout,label,0,0)
+       call WRITE_LINE(nout,label,0,0)
        label='           -         m/s         m/s         m/s'// &
             &'         m/s'
-       CALL WRITE_LINE(nout,label,0,0)                        
+       call WRITE_LINE(nout,label,0,0)                        
        btor=bt0/(1.0+p_eps)
        bpol=btor/p_fhat
-       btot=SQRT(btor**2+bpol**2)*btor/ABS(btor)
+       btot=sqrt(btor**2+bpol**2)*btor/ABS(btor)
        DO i=1,m_s
           idum(1)=i
           im=jm_s(i)
@@ -1186,23 +1358,23 @@ contains
           rdum(3)=uthai*btot-ppr/btot
           !         Perpendicular
           rdum(4)=ppr*bpol/btot/btor
-          CALL WRITE_IR(nout,1,idum,4,rdum,2)           
+          call WRITE_IR(nout,1,idum,4,rdum,2)           
        ENDDO
        !  Miscellaneous parameters
        label='     *** Miscellaneous Parameters ***'
-       CALL WRITE_LINE(nout,label,2,1)
+       call WRITE_LINE(nout,label,2,1)
        label='<J_bs.B>/Bt0 (A/m**2) ='
        rdum(1)=p_bsjb/bt0
-       CALL WRITE_LINE_IR(nout,label,0,idum,1,rdum,2)
+       call WRITE_LINE_IR(nout,label,0,idum,1,rdum,2)
        label='<J_ex.B>/Bt0 (A/m**2) ='
        rdum(1)=p_exjb/bt0
-       CALL WRITE_LINE_IR(nout,label,0,idum,1,rdum,2)
+       call WRITE_LINE_IR(nout,label,0,idum,1,rdum,2)
        label='eta parallel (Ohm*m) ='
        rdum(1)=p_etap
-       CALL WRITE_LINE_IR(nout,label,0,idum,1,rdum,2)
+       call WRITE_LINE_IR(nout,label,0,idum,1,rdum,2)
     ENDIF
 
-    RETURN
-  end SUBROUTINE NCLASS_CHECK
+    return
+  end subroutine nclass_check
 
 end module tx_nclass_mod

@@ -1,3 +1,267 @@
+!!$!***********************************************************************
+!!$!
+!!$!   Rate coefficients with Chebyshev polynomials fit
+!!$!     valid for background Ti = 1eV => 2*10^4eV
+!!$!               beam energy   = 10keV/amu => 500keV/amu
+!!$! 
+!!$!     (C.F. Barnett, "ATOMIC DATA FOR FUSION VOLUME 1", ORNL-6086 (1990))
+!!$!
+!!$!     Inputs (real*8): TieV    : Hydrogenic ion temperature [eV]
+!!$!                      EbeVamu : Beam energy [eV]
+!!$!     Output (real*8): SiVcxb  : Charge exchange maxwellian rate coefficient with beam [m^3/s]
+!!$!                      SiVizb  : Ionization maxwellian rate coefficient with beam [m^3/s]
+!!$!
+!!$!***********************************************************************
+!!$
+!!$module mod_chebyshev
+!!$  implicit none
+!!$  integer(4), parameter :: iemax = 1001, jmax = 7
+!!$  real(8), dimension(jmax) :: EBdata
+!!$  real(8), dimension(:,:,:,:), allocatable :: ucxb, uizb
+!!$  real(8), dimension(:)      , allocatable :: Earray
+!!$
+!!$contains
+!!$
+!!$!***********************************************************************
+!!$!
+!!$!   Spline Table of rate coefficients for Chebyshev polynomials fit
+!!$!
+!!$!     Common (real*8): Earray : Hydrogenic ion temperature range from Emin to Emax
+!!$!                      Ebdata : Discrete beam energy
+!!$!                      ucxb   : 2D spline coefficients for charge exchange
+!!$!                      uizb   : 2D spline coefficients for ionization by protons
+!!$!     Internal (real*8): acxb : Table of Maxwellian rate coefficient in A-27
+!!$!                                                   ^^^^^^^^^^^^^^^^
+!!$!                        aizb : Table of Maxwellian rate coefficient in D-10
+!!$!                                                   ^^^^^^^^^^^^^^^^
+!!$!***********************************************************************
+!!$
+!!$
+!!$  subroutine spline_table_beam_rate_coef
+!!$    implicit none
+!!$    real(8), dimension(0:6,jmax) :: acx, aiz
+!!$    real(8), dimension(:,:), allocatable :: ratedata, dx, dy, dxy
+!!$    integer(4) :: i, j, ierr
+!!$    real(8) :: Emax, Emin, dElin, Elin
+!!$
+!!$    !  H + H^+ -> H + H^+
+!!$    !  Charge exchange (A-27)
+!!$    !  Beam - Maxwellian rate coefficients
+!!$
+!!$    acx(0:6,1:jmax) = &
+!!$         & reshape((/ -3.23588d+1, -2.28428d-1, -1.47539d-1, -7.73418d-2  &
+!!$                & ,   -3.29002d-2, -1.09141d-2, -2.93158d-3  & ! 10keV/amu
+!!$                & ,   -3.27829d+1, -2.26775d-1, -1.38750d-1, -7.04432d-2  &
+!!$                & ,   -3.03096d-2, -1.00013d-2, -1.47228d-3  & ! 20keV/amu
+!!$                & ,   -3.39547d+1, -1.36550d-1, -7.15786d-2, -3.65682d-2  &
+!!$                & ,   -2.10115d-2, -1.11355d-2, -4.14062d-3  & ! 40keV/amu
+!!$                & ,   -3.60736d+1,  1.09084d-1,  7.35296d-2,  2.31264d-2  &
+!!$                & ,   -7.74992d-3, -1.38165d-2, -8.49906d-3  & ! 70keV/amu
+!!$                & ,   -3.81082d+1,  3.09107d-1,  1.95996d-1,  8.14408d-2  &
+!!$                & ,    1.35787d-2, -9.21346d-3, -1.02081d-2  & ! 100keV/amu
+!!$                & ,   -4.29608d+1,  3.96726d-1,  2.99000d-1,  1.81207d-1  &
+!!$                & ,    8.74182d-2,  3.26701d-2,  7.33350d-3  & ! 200keV/amu
+!!$                & ,   -5.17564d+1,  3.37283d-1,  2.43298d-1,  1.48098d-1  &
+!!$                & ,    7.72749d-2,  3.54105d-2,  1.56884d-2  & ! 500keV/amu
+!!$                &   /), shape(acx) )
+!!$
+!!$    !  H + H^+ -> H^+ + H^ + e^-
+!!$    !  Ionization by protons (D-11)
+!!$    !  Beam - Maxwellian rate coefficients
+!!$
+!!$    aiz(0:6,1:jmax) = &
+!!$         & reshape((/ -3.82968d+1,  1.12152d00,  6.44681d-1,  1.00717d-1  &
+!!$                & ,   -1.00166d-1, -3.95957d-2, -2.65964d-3  & ! 10keV/amu
+!!$                & ,   -3.57290d+1,  3.56274d-1,  2.02092d-1,  6.20743d-2  &
+!!$                & ,   -2.76894d-3, -1.15918d-2, -4.10154d-3  & ! 20keV/amu
+!!$                & ,   -3.41679d+1, -1.62401d-2,  3.246363d-4, 7.54856d-3  &
+!!$                & ,    8.28055d-3,  4.20183d-3,  1.24748d-3  & ! 40keV/amu
+!!$                & ,   -3.37606d+1, -4.00418d-2, -2.58461d-2, -1.20904d-2  &
+!!$                & ,   -3.36001d-3,  2.548592d-4, 9.663075d-4 & ! 70keV/amu
+!!$                & ,   -3.37204d+1, -2.56605d-2, -1.80094d-2, -1.07132d-2  &
+!!$                & ,   -5.35053d-3, -2.08862d-3, -4.645604d-4 & ! 100keV/amu
+!!$                & ,   -3.38801d+1, -1.46171d-2, -9.02218d-3, -4.77874d-3  &
+!!$                & ,   -2.29897d-3, -9.828762d-4,-3.658987d-4 & ! 200keV/amu
+!!$                & ,   -3.44565d+1, -7.913823d-4,-5.710595d-4,-3.486254d-4 &
+!!$                & ,   -1.820028d-4,-8.154704d-5,-3.512063d-5 & ! 500keV/amu
+!!$                &   /), shape(aiz) )
+!!$
+!!$    EBdata(1:jmax) = (/ 1.d4, 2.d4, 4.d4, 7.d4, 1.d5, 2.d5, 5.d5 /)
+!!$
+!!$    Emin = 1.d0 ! [eV]
+!!$    Emax = 2.d4 ! [eV]
+!!$
+!!$    allocate(Earray(iemax))
+!!$    allocate(ucxb(4,4,iemax,jmax),uizb(4,4,iemax,jmax))
+!!$
+!!$    allocate(ratedata(iemax,jmax))
+!!$    allocate(dx, dy, dxy, mold=ratedata)
+!!$
+!!$    ! --- Equally-spaced in logspace ---
+!!$    dElin = (log10(Emax) - log10(Emin)) / (iemax - 1)
+!!$
+!!$    Elin      = log10(Emin)
+!!$    Earray(1) = 1.d0**Elin
+!!$    do i = 2, iemax
+!!$       Elin      = Elin + dElin
+!!$       Earray(i) = 1.d1**Elin
+!!$    end do
+!!$
+!!$    ! --- Charge exchange ---
+!!$
+!!$    do j = 1, jmax
+!!$       do i = 1, iemax
+!!$          ratedata(i,j) = func_ratecoef(Earray(i),Emax,Emin,acx(:,j))
+!!$       end do
+!!$    end do
+!!$
+!!$    !   Compute spline coefficients
+!!$
+!!$    call spl2d(Earray,EBdata,ratedata,dx,dy,dxy,ucxb,iemax,iemax,jmax,0,0,ierr)
+!!$    if( ierr /= 0 ) stop 'spl2d error in spline_table_beam_rate_coef; cx.'
+!!$
+!!$    ! --- Ionization ---
+!!$
+!!$    do j = 1, jmax
+!!$       do i = 1, iemax
+!!$          ratedata(i,j) = func_ratecoef(Earray(i),Emax,Emin,aiz(:,j))
+!!$       end do
+!!$    end do
+!!$
+!!$    !   Compute spline coefficients
+!!$
+!!$    call spl2d(Earray,EBdata,ratedata,dx,dy,dxy,uizb,iemax,iemax,jmax,0,0,ierr)
+!!$    if( ierr /= 0 ) stop 'spl2d error in spline_table_beam_rate_coef; iz.'
+!!$
+!!$    deallocate(ratedata,dx,dy,dxy)
+!!$
+!!$  end subroutine spline_table_beam_rate_coef
+!!$
+!!$  subroutine deallocate_spline_table_beam_rate_coef
+!!$    implicit none
+!!$
+!!$    if(allocated(Earray)) deallocate(Earray,ucxb,uizb)
+!!$
+!!$  end subroutine deallocate_spline_table_beam_rate_coef
+!!$
+!!$!***********************************************************************
+!!$!
+!!$!   Charge exchange rate coefficients for beam H + Maxwellian H^+ -> H + H^+
+!!$!
+!!$!     valid for background Ti = 1eV => 2*10^4eV
+!!$!               beam energy   = 10keV/amu => 500keV/amu
+!!$! 
+!!$!     Inputs (real*8): TieV    : Hydrogenic ion temperature [eV]
+!!$!                    : EbeVamu : Beam energy [eV]
+!!$!     Output (real*8): SiVcxb  : Charge exchange maxwellian rate coefficient with beam [m^3/s]
+!!$!
+!!$!***********************************************************************
+!!$
+!!$  function SiVcxB(TieV, EbeVamu)
+!!$    implicit none
+!!$    ! input
+!!$    real(8), intent(in) :: TieV, EbeVamu ! [eV]
+!!$    ! output
+!!$    real(8) :: SiVcxB
+!!$    ! local
+!!$    integer(4) :: ierr
+!!$
+!!$    if( TieV < Earray(1) .or. TieV > Earray(iemax) ) then
+!!$       write(6,*) 'Function SiVcxB: Out of energy range. Ti [eV]=', TieV
+!!$    else if( EbeVamu < EBdata(1) .or. EbeVamu > EBdata(jmax) ) then
+!!$       write(6,*) 'Function SiVcxB: Out of energy range. Eb [eV/amu]=', EbeVamu
+!!$    end if
+!!$
+!!$    call spl2df(TieV,EbeVamu,SiVcxB,Earray,EBdata,ucxb,iemax,iemax,jmax,ierr)
+!!$
+!!$  end function SiVcxB
+!!$
+!!$!***********************************************************************
+!!$!
+!!$!   Ionization rate coefficients for beam H + Maxwellian H^+ -> H^+ + H^+ + e^-
+!!$!
+!!$!     valid for background Ti = 1eV => 2*10^4eV
+!!$!               beam energy   = 10keV/amu => 500keV/amu
+!!$! 
+!!$!     Inputs (real*8): TieV    : Hydrogenic ion temperature [eV]
+!!$!                    : EbeVamu : Beam energy [eV]
+!!$!     Output (real*8): SiVizb  : Ionization maxwellian rate coefficient with beam [m^3/s]
+!!$!
+!!$!***********************************************************************
+!!$
+!!$  function SiVizB(TieV, EbeVamu)
+!!$    implicit none
+!!$    ! input
+!!$    real(8), intent(in) :: TieV, EbeVamu ! [eV]
+!!$    ! output
+!!$    real(8) :: SiVizB
+!!$    ! local
+!!$    integer(4) :: ierr
+!!$
+!!$    if( TieV < Earray(1) .or. TieV > Earray(iemax) ) then
+!!$       write(6,*) 'Function SiVizB: Out of energy range. Ti [eV]=', TieV
+!!$    else if( EbeVamu < EBdata(1) .or. EbeVamu > EBdata(jmax) ) then
+!!$       write(6,*) 'Function SiVizB: Out of energy range. Eb [eV/amu]=', EbeVamu
+!!$    end if
+!!$
+!!$    call spl2df(TieV,EbeVamu,SiVizB,Earray,EBdata,uizb,iemax,iemax,jmax,ierr)
+!!$
+!!$  end function SiVizB
+!!$
+!!$! ---
+!!$
+!!$  function func_ratecoef(E,Emax,Emin,a)
+!!$    implicit none
+!!$    ! input
+!!$    real(8), intent(in) :: E, Emax, Emin
+!!$    real(8), dimension(0:), intent(in) :: a
+!!$    ! output
+!!$    real(8) :: func_ratecoef
+!!$    ! local
+!!$    real(8) :: lnsigE, x
+!!$    real(8) :: cm3tom3 = 1.d-6
+!!$
+!!$    x = ( ( log(E) - log(Emin) ) - ( log(Emax) - log(E) ) ) / ( log(Emax) - log(Emin) )
+!!$
+!!$    lnsigE = 0.5d0 * a(0) + chebypoly(x,a)
+!!$
+!!$    func_ratecoef = exp(lnsigE) * cm3tom3
+!!$
+!!$  end function func_ratecoef
+!!$
+!!$! ---
+!!$
+!!$  function chebypoly(x,a) result(AT)
+!!$    implicit none
+!!$    ! input
+!!$    real(8), intent(in) :: x
+!!$    real(8), dimension(0:), intent(in) :: a
+!!$    ! output
+!!$    real(8) :: AT
+!!$    ! local
+!!$    integer(4) :: i, j, imax
+!!$    real(8) :: T(0:8)
+!!$
+!!$    imax = size(a) - 2
+!!$
+!!$    T(0) = 1.d0
+!!$    T(1) = x
+!!$    AT = a(1) * T(1)
+!!$
+!!$    do i = 1, imax
+!!$       j = i + 1
+!!$       ! Chebyshev polynomials
+!!$       T(j) = 2.d0 * x * T(j-1) - T(j-2)
+!!$       ! Sum A_jT_j
+!!$       AT = AT + a(j) * T(j)
+!!$    end do
+!!$
+!!$  end function chebypoly
+!!$
+!!$end module mod_chebyshev
+!!$
+! ----------------------------------------------------------------------
+
 !***************************************************************
 !
 !   Auxiliary heating system
@@ -7,35 +271,48 @@
 module aux_system
   implicit none
   private
-  real(8), save :: Vbabsmax, Scxb
-  public :: txauxs, Vbabsmax, Scxb
+  real(8), save :: Vbabsmax!, Scxb
+  public :: txauxs, Vbabsmax!, Scxb
 
 contains
 
   subroutine txauxs
 
-    use tx_commons
-    use tx_interface, only : INTG_F, inexpolate, fgaussian, coulog, CORR
+    ! SNB*(NR) : The birth rate of beam ions per unit volume
+    ! MNB(NR)  : In essence MNB is similar to SNB, but MNB distinguishes itself
+    !            from SNB in that MNB takes into account the tangential NB direction,
+    !            the pitch between the NB chord and the field line and the contribution
+    !            of the perpendicular NBI to the momentum input.
 
-    INTEGER(4) :: NR, i, ideriv = 1, nrbound
-    REAL(8) :: SL, SLT1, SLT2, PNBP0, PNBT10, PNBT20, PNBex0, SNBPDi_INTG, &
+    use tx_commons
+    use tx_interface,      only : inexpolate, fgaussian
+    use tx_core_module,    only : intg_vol
+    use mod_cross_section, only : SiVcxb, SiVizb
+    use mod_coulomb,       only : coulog
+
+    integer(4) :: NR, i, ideriv = 1, nrbound!, izmodel = 1
+    real(8) :: SL, SLT1, SLT2, PNBP0, PNBT10, PNBT20, PNBex0, SNBPDi_INTG, &
          &     PNBPi0, PNBTi10, PNBTi20, PRFe0, PRFi0, SL1, SL2, &
-         &     Vti, rNuPara, rNubes, BBL, PALFL, Ecr, &
-         &     EbL, logEbL, Sion, xl, Tqt0L, Tb
-    real(8), parameter :: PAHe = 4.D0, & ! Atomic mass number of He
-         &                Enf  = 3.5D3   ! in keV, equal to 3.5 MeV
+         &     Vti, rNubes, BBL, PALFL, Ecr, &
+         &     zEbeV, zEbkev, xl, Tqt0L, TieV, rateizb!, Sion, logEbeV
+    real(8), parameter :: PAHe = 4.d0, & ! Atomic mass number of He
+         &                Enf  = 3.5d3   ! in keV, equal to 3.5 MeV
     real(8), dimension(0:NRMAX) :: SNBP, SNBT1, SNBT2, SNBTi1, SNBTi2, SRFe, SRFi
     ! Mainly for derivatives
-    real(8), dimension(:), allocatable :: Tqt_tmp, Tqp_tmp
+    real(8), dimension(:), allocatable :: zTqt, zTqp
 
     !     *** Constants ***
 
+    !     Averaged beam injection energy
+
+    Eb =  (esps(1) + 0.5d0 * esps(2) + esps(3) / 3.d0) * Ebmax
+
     !     NBI beam speed
 
-    Vb =  SQRT(2.D0 * Eb * rKeV / AMB)
-    Tb =  2.d0 / 3.d0 * Eb ! Mean temperature of beam ions
+    Vb =  sqrt(2.d0 * Eb * rKilo / (amb * amqp) )
     Vbpara(0:NRMAX) = Vb
     Vbabsmax = Vb
+
 
     ! **************** Heating part ****************
 
@@ -57,75 +334,85 @@ contains
 
     !  For NBI heating
     !  *** Perpendicular
-    IF(PNBHP /= 0.D0) THEN
-       CALL deposition_profile(SNBP,SL,RNBP0,RNBP,'NB')
-       PNBP0 = PNBHP * 1.D6 / (2.D0 * Pi * RR * SL)
+    if(PNBHP /= 0.d0) then
+       call deposition_profile(SNBP,SL,RNBP0,RNBP,'NB')
+       PNBP0 = PNBHP * 1.d6 / SL
        PNBPi0 = PNBP0
        SNBPDi(0:NRMAX) = SNBP(0:NRMAX)
 
-       IF(MDLNBD /= 0) THEN ! Orbit effect
+       if(MDLNBD /= 0) then ! Orbit effect
+!!$          ! For ions
+!!$          if(PNBMPD == 0.d0) then ! Exact perpendicular NBI
+!!$             call deposition_profile(SNBPDi,SL,RNBP0,RNBP,'NB_TRAP',0.d0)
+!!$          else ! Near perpendicular NBI
+!!$             call deposition_profile(SNBPDi,SL,RNBP0,RNBP,'NB_TRAP',sign(1.d0,PNBMPD))
+!!$          end if
           ! For ions
-          IF(PNBMPD == 0.D0) THEN ! Exact perpendicular NBI
-             CALL deposition_profile(SNBPDi,SL,RNBP0,RNBP,'NB_TRAP',0.D0)
-          ELSE ! Near perpendicular NBI
-             CALL deposition_profile(SNBPDi,SL,RNBP0,RNBP,'NB_TRAP',SIGN(1.D0,PNBMPD))
-          END IF
-          PNBPi0 = PNBHP * 1.D6 / (2.D0 * Pi * RR * SL)
-       END IF
-    ELSE
-       PNBP0  = 0.D0
-       PNBPi0 = 0.D0
-       SNBP(0:NRMAX)   = 0.D0
-       SNBPDi(0:NRMAX) = 0.D0
-    END IF
+          if(PNBCD == 0.d0) then ! Exact perpendicular NBI
+             call deposition_profile(SNBPDi,SL,RNBP0,RNBP,'NB_TRAP',0.d0)
+          else ! Near perpendicular NBI
+             if(PNBMPD == 0.d0) then ! No collisional torque
+                call deposition_profile(SNBPDi,SL,RNBP0,RNBP,'NB_TRAP',PNBCD)
+             else ! W/ collisional torque
+                call deposition_profile(SNBPDi,SL,RNBP0,RNBP,'NB_TRAP',sign(1.d0,PNBMPD))
+             end if
+          end if
+          PNBPi0 = PNBHP * 1.d6 / SL
+       end if
+    else
+       PNBP0  = 0.d0
+       PNBPi0 = 0.d0
+       SNBP(0:NRMAX)   = 0.d0
+       SNBPDi(0:NRMAX) = 0.d0
+    end if
 
     !  *** Tangential
-    IF(PNBHT1 /= 0.D0) THEN
-       CALL deposition_profile(SNBT1,SLT1,RNBT10,RNBT1,'NB')
-       PNBT10 = PNBHT1 * 1.D6 / (2.D0 * Pi * RR * SLT1)
+    if(PNBHT1 /= 0.d0) then
+       call deposition_profile(SNBT1,SLT1,RNBT10,RNBT1,'NB')
+       PNBT10 = PNBHT1 * 1.d6 / SLT1
 
-       IF(MDLNBD > 1) THEN ! Orbit effect
+       if(MDLNBD > 1) then ! Orbit effect
           ! For ions
-          CALL deposition_profile(SNBTi1,SLT1,RNBT10,RNBT1,'NB_PASS',SIGN(1.D0,PNBCD))
-          PNBTi10 = PNBHT1 * 1.D6 / (2.D0 * Pi * RR * SLT1)
-       END IF
-    ELSE
-       PNBT10 = 0.D0
-       SNBT1(0:NRMAX)  = 0.D0
-       SNBTi1(0:NRMAX) = 0.D0
-    END IF
+          call deposition_profile(SNBTi1,SLT1,RNBT10,RNBT1,'NB_PASS',sign(1.d0,PNBCD))
+          PNBTi10 = PNBHT1 * 1.d6 / SLT1
+       end if
+    else
+       PNBT10 = 0.d0
+       SNBT1(0:NRMAX)  = 0.d0
+       SNBTi1(0:NRMAX) = 0.d0
+    end if
 
-    IF(PNBHT2 /= 0.D0) THEN
-       CALL deposition_profile(SNBT2,SLT2,RNBT20,RNBT2,'NB')
-       PNBT20 = PNBHT2 * 1.D6 / (2.D0 * Pi * RR * SLT2)
+    if(PNBHT2 /= 0.d0) then
+       call deposition_profile(SNBT2,SLT2,RNBT20,RNBT2,'NB')
+       PNBT20 = PNBHT2 * 1.d6 / SLT2
 
-       IF(MDLNBD > 1) THEN
+       if(MDLNBD > 1) then
           ! For ions
-          CALL deposition_profile(SNBTi2,SLT2,RNBT20,RNBT2,'NB_PASS',SIGN(1.D0,PNBCD))
-          PNBTi20 = PNBHT2 * 1.D6 / (2.D0 * Pi * RR * SLT2)
-       END IF
-    ELSE
-       PNBT20 = 0.D0
-       SNBT2(0:NRMAX)  = 0.D0
-       SNBTi2(0:NRMAX) = 0.D0
-    END IF
+          call deposition_profile(SNBTi2,SLT2,RNBT20,RNBT2,'NB_PASS',sign(1.d0,PNBCD))
+          PNBTi20 = PNBHT2 * 1.d6 / SLT2
+       end if
+    else
+       PNBT20 = 0.d0
+       SNBT2(0:NRMAX)  = 0.d0
+       SNBTi2(0:NRMAX) = 0.d0
+    end if
 
     !  For RF heating
-    IF(PRFHe /= 0.D0) THEN
-       CALL deposition_profile(SRFe,SL,RRFe0,RRFew,'RFe')
-       PRFe0 = PRFHe * 1.D6 / (2.D0 * Pi * RR * SL)
-    ELSE
-       PRFe0 = 0.D0
-       SRFe(0:NRMAX) = 0.D0
-    END IF
+    if(PRFHe /= 0.d0) then
+       call deposition_profile(SRFe,SL,RRFe0,RRFew,'RFe')
+       PRFe0 = PRFHe * 1.d6 / SL
+    else
+       PRFe0 = 0.d0
+       SRFe(0:NRMAX) = 0.d0
+    end if
 
-    IF(PRFHi /= 0.D0) THEN
-       CALL deposition_profile(SRFi,SL,RRFi0,RRFiw,'RFi')
-       PRFi0 = PRFHi * 1.D6 / (2.D0 * Pi * RR * SL)
-    ELSE
-       PRFi0 = 0.D0
-       SRFi(0:NRMAX) = 0.D0
-    END IF
+    if(PRFHi /= 0.d0) then
+       call deposition_profile(SRFi,SL,RRFi0,RRFiw,'RFi')
+       PRFi0 = PRFHi * 1.d6 / SL
+    else
+       PRFi0 = 0.d0
+       SRFi(0:NRMAX) = 0.d0
+    end if
 
     ! Deposition profiles are loaded from the file
 
@@ -144,20 +431,20 @@ contains
        i = 1
        call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBe,ideriv)
        ! Calibration by using total power of electrons
-       SL = 2.D0 * Pi * INTG_F(SNBe)
+       SL = intg_vol(SNBe)
        if(SL /= 0.d0) SNBe(0:NRMAX) = SNBe(0:NRMAX) * 1.D-20 &
-            &        * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
+            &        * (infiles(i)%totP / (Eb * rKeV * SL))
 
        ! (2) Birth TOTAL ions (SNB for heating profiles)
        i = 2
        call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBi,ideriv)
        ! Calibration by using total power of all ions
-       SL = 2.D0 * Pi * INTG_F(SNBi)
+       SL = intg_vol(SNBi)
        PNBHex = infiles(i)%totP * 1.D-6
        if(SL /= 0.d0) SNBi(0:NRMAX) = SNBi(0:NRMAX) * 1.D-20 &
-            &        * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
-       PNBex0 = Eb * rKeV * 1.D20
-       !  "or"= infiles(i)%totP / (2.D0 * Pi * RR * (2.D0 * Pi * INTG_F(SNBi)))
+            &        * (infiles(i)%totP / (Eb * rKeV * SL))
+       PNBex0 = Eb * rKeV * 1.d20
+       !  "or"= infiles(i)%totP / intg_vol(SNBi)
        ! Birth profiles for heating power
        !   (plasma is usually heated by beam ions, not beam electrons)
        SNB(0:NRMAX) = SNBi(0:NRMAX)
@@ -168,21 +455,21 @@ contains
           i = 3
           call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,2,SNBPDi)
           ! Calibration by using total power of all ions
-          SL = 2.D0 * Pi * INTG_F(SNBPDi)
+          SL = intg_vol(SNBPDi)
           if(SL /= 0.d0) SNBPDi(0:NRMAX) = SNBPDi(0:NRMAX) * 1.D-20 &
-               &          * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
-          PNBPi0 = Eb * rKeV * 1.D20
-          ! "or" = infiles(2)%totP / (2.D0 * Pi * RR * (2.D0 * Pi * INTG_F(SNBPDi)))
+               &          * (infiles(i)%totP / (Eb * rKeV * SL))
+          PNBPi0 = Eb * rKeV * 1.d20
+          ! "or" = infiles(2)%totP / intg_vol(SNBPDi)
 
           ! (4) Birth Passing (SNBTGi for passing beam ions)
           i = 4
           call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBTGi,ideriv)
           ! Calibration by using total power of trapped ions
-          SL = 2.D0 * Pi * INTG_F(SNBTGi)
+          SL = intg_vol(SNBTGi)
           if(SL /= 0.d0) SNBTGi(0:NRMAX) = SNBTGi(0:NRMAX) * 1.D-20 &
-               &          * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
-          PNBT10 = Eb * rKeV * 1.D20
-          ! "or" = infiles(i)%totP / (2.D0 * Pi * RR * (2.D0 * Pi * INTG_F(SNBTGi)))
+               &          * (infiles(i)%totP / (Eb * rKeV * SL))
+          PNBT10 = Eb * rKeV * 1.d20
+          ! "or" = infiles(i)%totP / intg_vol(SNBTGi)
 
           ! (2) Birth TOTAL (SNBb for beam ions)
           SNBb(0:NRMAX) = SNB(0:NRMAX)
@@ -193,11 +480,11 @@ contains
           i = 7
           call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBPDi,ideriv)
           ! Calibration by using total power of trapped ions
-          SL = 2.D0 * Pi * INTG_F(SNBPDi)
+          SL = intg_vol(SNBPDi)
           if(SL /= 0.d0) SNBPDi(0:NRMAX) = SNBPDi(0:NRMAX) * 1.D-20 &
-               &          * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
-          PNBPi0 = Eb * rKeV * 1.D20
-          ! "or" = infiles(i)%totP / (2.D0 * Pi * RR * (2.D0 * Pi * INTG_F(SNBPDi)))
+               &          * (infiles(i)%totP / (Eb * rKeV * SL))
+          PNBPi0 = Eb * rKeV * 1.d20
+          ! "or" = infiles(i)%totP / intg_vol(SNBPDi)
 
        ! *** Orbit effect for banana ions only ***
           if(MDLNBD == 1) then
@@ -205,11 +492,11 @@ contains
              i = 4
              call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBTGi,ideriv)
              ! Calibration by using total power of trapped ions
-             SL = 2.D0 * Pi * INTG_F(SNBTGi)
+             SL = intg_vol(SNBTGi)
              if(SL /= 0.d0) SNBTGi(0:NRMAX) = SNBTGi(0:NRMAX) * 1.D-20 &
-                  &          * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
-             PNBT10 = Eb * rKeV * 1.D20
-             ! "or" = infiles(i)%totP / (2.D0 * Pi * RR * (2.D0 * Pi * INTG_F(SNBTGi)))
+                  &          * (infiles(i)%totP / (Eb * rKeV * SL))
+             PNBT10 = Eb * rKeV * 1.d20
+             ! "or" = infiles(i)%totP / intg_vol(SNBTGi)
 
              ! (4) Birth Passing + (7) Orbit Trapped (SNBb for beam ions)
              SNBb(0:NRMAX) = SNBTGi(0:NRMAX) + SNBPDi(0:NRMAX)
@@ -220,23 +507,23 @@ contains
              i = 6
              call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBb,ideriv)
              ! Calibration by using total power of trapped ions
-             SL = 2.D0 * Pi * INTG_F(SNBb)
+             SL = intg_vol(SNBb)
              if(SL /= 0.d0) SNBb(0:NRMAX) = SNBb(0:NRMAX) * 1.D-20 &
-                  &        * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
+                  &        * (infiles(i)%totP / (Eb * rKeV * SL))
 
              ! (8) Orbit Passing (SNBTGi for passing beam ions)
              i = 8
              call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBTGi,ideriv)
              ! Calibration by using total power of trapped ions
-             SL = 2.D0 * Pi * INTG_F(SNBTGi)
+             SL = intg_vol(SNBTGi)
              if(SL /= 0.d0) SNBTGi(0:NRMAX) = SNBTGi(0:NRMAX) * 1.D-20 &
-                  &          * (infiles(i)%totP / (Eb * rKeV * (2.D0 * Pi * RR * SL)))
-             PNBT10 = Eb * rKeV * 1.D20
-             ! "or" = infiles(i)%totP / (2.D0 * Pi * RR * (2.D0 * Pi * INTG_F(SNBTGi)))
+                  &          * (infiles(i)%totP / (Eb * rKeV * SL))
+             PNBT10 = Eb * rKeV * 1.d20
+             ! "or" = infiles(i)%totP / intg_vol(SNBTGi)
           end if
        end if
        ! Collisional torque injection part
-       MNB(0:NRMAX)  = PNBCD * SNBTGi(0:NRMAX) * PNBMPD
+       MNB(0:NRMAX)  = PNBCD * SNBTGi(0:NRMAX) * PNBPTC + SNBPDi(NR) * PNBMPD
 
        ! Local parallel velocity at birth for passing ions
        i = 8
@@ -249,22 +536,22 @@ contains
     ! *** Pre-defined input (OFMC: Torque.txt) ************************
     else if(iflag_file == 2) then
 
-       allocate(Tqt_tmp(0:NRMAX))
+       allocate(zTqt, mold=rho)
        ! Total torque input
        i = 1
-       call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,Tqt_tmp,ideriv,idx=0)
-       SL = 4.D0 * Pi**2 * RR * INTG_F(Tqt_tmp)
-       if(SL /= 0.d0) Tqt_tmp(0:NRMAX) = Tqt_tmp(0:NRMAX) * (infiles(i)%totS / SL)
+       call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,zTqt,ideriv,idx=0)
+       SL = intg_vol(zTqt)
+       if(SL /= 0.d0) zTqt(0:NRMAX) = zTqt(0:NRMAX) * (infiles(i)%totS / SL)
 
     ! *** Arbitrary input *********************************************
     else if(iflag_file == 3) then
        do i = 1, n_infiles
           if(infiles(i)%name == datatype(1)) then ! Perp NB
              call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,5,SNBP)
-             SL   = 2.D0 * PI * INTG_F(SNBP)
-             PNBP0  = PNBHP * 1.D6 / (2.D0 * Pi * RR * SL)
+             SL   = intg_vol(SNBP)
+             PNBP0  = PNBHP * 1.d6 / SL
              ! Banana orbit effect
-             if(MDLNBD /= 0) then! .and. PNBMPD /= 0.D0) then
+             if(MDLNBD /= 0) then! .and. PNBMPD /= 0.d0) then
                 do NR = 0, NRMAX
                    ! Passing particles generated by Perp NB
                    SNBTi2(NR) = (1.d0 - ft(NR)) * SNBP(NR) ! tangential part of ions
@@ -275,26 +562,26 @@ contains
                 end do
                 PNBTi20 = PNBP0 ! tangential part of ions
                 PNBT20  = PNBP0 ! tangential part of electrons
-                SNBPDi_INTG = INTG_F(SNBPDi)
-                call shift_prof(SNBPDi, 'TRAP',SIGN(1.D0,PNBCD))
+                SNBPDi_INTG = intg_vol(SNBPDi)
+                call shift_prof(SNBPDi, 'TRAP',sign(1.d0,PNBCD))
                 ! calibration of Perp NB amplitude of ions
-                PNBPi0 = PNBP0 * (SNBPDi_INTG / INTG_F(SNBPDi))
-!!                call shift_prof(SNBTi2,'PASS',SIGN(1.D0,PNBCD))
+                PNBPi0 = PNBP0 * (SNBPDi_INTG / intg_vol(SNBPDi))
+!!                call shift_prof(SNBTi2,'PASS',sign(1.d0,PNBCD))
              end if
           else if(infiles(i)%name == datatype(2)) then ! Tang NB 1
              call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,9,SNBT1)
-             SLT1 = 2.D0 * PI * INTG_F(SNBT1)
-             PNBT10 = PNBHT1 * 1.D6 / (2.D0 * Pi * RR * SLT1)
+             SLT1 = intg_vol(SNBT1)
+             PNBT10 = PNBHT1 * 1.d6 / SLT1
           else if(infiles(i)%name == datatype(3)) then ! Tang NB 2
              call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,9,SNBT2)
-             SLT2 = 2.D0 * PI * INTG_F(SNBT2)
-             PNBT20 = PNBHT2 * 1.D6 / (2.D0 * Pi * RR * SLT2)
+             SLT2 = intg_vol(SNBT2)
+             PNBT20 = PNBHT2 * 1.d6 / SLT2
           else if(infiles(i)%name == datatype(4)) then ! RF
              call inexpolate(infiles(i)%nol,infiles(i)%r,infiles(i)%data,NRMAX,RHO,0,SRFe)
-             SL   = 2.D0 * PI * INTG_F(SRFe)
-             PRFe0 = PRFHe * 1.D6 / (2.D0 * Pi * RR * SL)
-             SL   = 2.D0 * PI * INTG_F(SRFe)
-             PRFi0 = PRFHi * 1.D6 / (2.D0 * Pi * RR * SL)
+             SL   = intg_vol(SRFe)
+             PRFe0 = PRFHe * 1.d6 / SL
+             SL   = intg_vol(SRFe)
+             PRFi0 = PRFHi * 1.d6 / SL
           end if
        end do
     end if
@@ -303,29 +590,53 @@ contains
     PNBH = PNBHP + PNBHT1 + PNBHT2 + PNBHex
 
     !   Ratio of CX deposition rate to IZ deposition rate
-    !     (Riviere, NF 11 (1971) 363)
 
-    EbL = Eb * 1.D3 / PA
-    logEbL = log10(EbL)
+    RatCX(:) = 0.d0 ! Ionization only
 
-    Scxb = 6.937D-19 * (1.D0 - 0.155D0 * logEbL)**2 / (1.D0 + 1.112D-15 * EbL**3.3D0)
-
-    IF(PNBH == 0.D0) THEN
-       RatCX = 0.D0
-    ELSE
-       IF(Eb > 150.D0) THEN
-          Sion = 3.6D-16 / EbL * (- 0.7783D0 + logEbL)
-       ELSE
-          Sion = 10.D0**(-0.8712D0 * logEbL**2 + 8.156D0 * logEbL - 38.833D0)
-       END IF
-       RatCX = Scxb / (Scxb + Sion)
-    END IF
+    zEbkeV  = Eb / amb
+    zEbeV   = zEbkeV * 1.d3
+!!$    logEbeV = log10(zEbeV)
+!!$
+!!$    !     CX cross-section
+!!$    !     (Riviere, NF 11 (1971) 363)
+!!$    Scxb = 6.937D-19 * (1.d0 - 0.155d0 * logEbeV)**2 / (1.d0 + 1.112D-15 * zEbeV**3.3d0)
+!!$
+!!$    IF(PNBH /= 0.d0) THEN
+!!$       !     Ionization cross-section
+!!$       if( izmodel == 0 ) then
+!!$          !     (Riviere, NF 11 (1971) 363)
+!!$          IF(zEbeV > 150.d0) THEN
+!!$             Sion = 3.6D-16 / zEbeV * (- 0.7783d0 + logEbeV)
+!!$          ELSE
+!!$             Sion = 10.d0**(-0.8712d0 * logEbeV**2 + 8.156d0 * logEbeV - 38.833d0)
+!!$          END IF
+!!$       else
+!!$          !     (R.L. Freeman and E.M. Jones, Culham Laboratory Report, CLM-R-137 (May 1974))
+!!$          Sion = SigIzPro(zEbkeV)
+!!$       end if
+!!$
+!!$       RatCX(0:NRMAX) = Scxb / (Scxb + Sion)
+!!$    END IF
+    if( PNBH /= 0.d0 ) then
+       if( MDBMCX == 1 ) then
+          ! Calculate the ratio of CX deposition rate to IZ deposition rate
+          do nr = 0, nrmax
+             TieV        = Var(NR,2)%T * rKilo
+             rateizb     = SiVizB(TieV, zEbeV)
+             ratecxb(NR) = SiVcxB(TieV, zEbeV)
+             RatCX(NR)   = ratecxb(NR) / (ratecxb(NR) + rateizb)
+          end do
+       else if( MDBMCX > 1 .or. MDBMCX < 0 ) then
+          ! Charge Exchange only
+          RatCX(:) = 1.d0
+       end if
+    end if
 
     !   Alpha heating
 
     do nr = 0, nrmax
-       PALFL = FSNF * bosch_fusion(PTiV(NR),0.5D0*PNiV(NR),0.5D0*PNiV(NR))
-       Ecr = 14.8D0 * (PAHe / PA**(2.D0/3.D0)) * PTeV(NR) ! in keV
+       PALFL = FSNF * bosch_fusion(Var(NR,2)%T,0.5d0*Var(NR,2)%n,0.5d0*Var(NR,2)%n)
+       Ecr = 14.8d0 * (PAHe / amb**(2.d0/3.d0)) * Var(NR,1)%T ! in keV
        PALFi(NR) = PALFL * rate_to_ion(Enf/Ecr)
        PALFe(NR) = PALFL - PALFi(NR)
     end do
@@ -333,32 +644,35 @@ contains
     !   Additional torque input to LQi3 without net torque
 
     if(Tqp0 /= 0.d0) then
-       allocate(Tqp_tmp(0:NRMAX))
+       allocate(zTqp, mold=rho)
        do nr = 0, nrmax
           Tqp(nr) = Tqp0 * fgaussian(Rho(nr),0.6d0,0.02d0)
        end do
-       SL1 = 2.D0 * PI * INTG_F(Tqp)
+       SL1 = intg_vol(Tqp)
        do nr = 0, nrmax
-          Tqp_tmp(nr) = Tqp0 * fgaussian(Rho(nr),0.7d0,0.02d0)
+          zTqp(nr) = Tqp0 * fgaussian(Rho(nr),0.7d0,0.02d0)
        end do
-       SL2 = 2.D0 * PI * INTG_F(Tqp_tmp)
+       SL2 = intg_vol(zTqp)
        do nr = 0, nrmax
-          Tqp(nr) = Tqp(nr) - (SL1 / SL2) * Tqp_tmp(nr)
+          Tqp(nr) = Tqp(nr) - (SL1 / SL2) * zTqp(nr)
        end do
-!!for_check       SL = 2.D0 * PI * INTG_F(Tqp)
-       deallocate(Tqp_tmp)
+       deallocate(zTqp)
     else
        Tqp(0:NRMAX) = 0.d0
     end if
 
     !   Additional torque input to LQi4
 
-    CALL deposition_profile(Tqt,SL,0.d0,0.d0,'Additional')
-    Tqt0L = Tqt0 / (2.D0*Pi*RR*2.D0*Pi*SL) ! Tqt0 [N m], Tqt0L [N/m^2]
-    Tqt(0:NRMAX) = Tqt0L * Tqt(0:NRMAX)
+!    call deposition_profile(Tqt,SL,0.d0,0.d0,'Additional')
+    call deposition_profile(Tqt,SL,RNBT10,RNBT1,'Additional')
+    Tqt0L = Tqt0 / SL ! Tqt0 [N m], Tqt0L [-]
+    Tqt(0:NRMAX) = Tqt0L * Tqt(0:NRMAX) ! <R.Source> [Nm/m^3]
+!    Tqt(0:NRMAX) = Tqt0L * Tqt(0:NRMAX) * vlt(0:NRMAX) / vlt(NRMAX)!test1
+!    Tqt(0:NRA) = Tqt0 * exp(- ((vlt(0:NRA)/vlt(NRA) - RNBT10) / RNBT1)**2) * (1.d0 - (vlt(0:NRA)/vlt(NRA))**4)!test2
+!    Tqt(NRA+1:NRMAX) = 0.d0
     if(iflag_file == 2) then
-       Tqt(0:NRMAX) = Tqt(0:NRMAX) + Tqt_tmp(0:NRMAX)
-       deallocate(Tqt_tmp)
+       Tqt(0:NRMAX) = Tqt(0:NRMAX) + zTqt(0:NRMAX)
+       deallocate(zTqt)
     end if
 
     ! ************** Heating part end **************
@@ -368,64 +682,43 @@ contains
     !             Tokamaks 3rd pp.246 - 252
 
     do NR = 0, NRMAX
-       BBL = SQRT(BphV(NR)**2 + BthV(NR)**2)
+       BBL = sqrt(BphV(NR)**2 + BthV(NR)**2)
 
-!!!       Vcr = (3.D0 * SQRT(PI / 2.D0) * PNiV(NR) * PZ**2 / PNeV(NR) * AME / AMI &
-!!!            &   * (ABS(PTeV(NR)) * rKeV / AME)**1.5D0)**(1.D0/3.D0)
-!       Ecr = (9.D0 * PI / 16.D0 * AMI / AME)**(1.D0/3.D0) * AMB / AMI * PTeV(NR) ! in keV
-       Ecr = 14.8D0 * (PA / PA**(2.D0/3.D0)) * PTeV(NR) ! in keV
-       Vti = SQRT(2.D0 * ABS(PTiV(NR)) * rKeV / AMI)
+!!!       Vcr = (3.d0 * sqrt(Pi / 2.d0) * Var(NR,2)%n * achgb**2 / Var(NR,1)%n * amas(1) / amas(2) &
+!!!            &   * (abs(Var(NR,1)%T) * rKilo / (amas(1) * amqp))**1.5d0)**(1.d0/3.d0)
+!       Ecr = (9.d0 * Pi / 16.d0 * amas(2) / amas(1) )**(1.d0/3.d0) * amb / amas(2) * Var(NR,1)%T ! in keV
+       Ecr = 14.8d0 * (amb / amb**(2.d0/3.d0)) * Var(NR,1)%T ! in keV
+       Vti = sqrt(2.d0 * abs(Var(NR,2)%T) * rKilo / (amas(2) * amqp))
        PNBcol_i(NR) = rate_to_ion(Eb/Ecr)
        PNBcol_e(NR) = 1.d0 - PNBcol_i(NR)
-       IF(PNBH == 0.D0 .AND. PNbV(NR) < 1.D-8) THEN
-          rNube(NR) = 0.D0
-          rNubi(NR) = 0.D0
-          rNuB (NR) = 0.D0
-       ELSE
-          rNube(NR) = PNeV(NR) * 1.D20 * PZ**2 * AEE**4 &
-               &     * coulog(1.d0,PNeV(NR),PTeV(NR),PTiV(NR),AEP,1.d0,PA,PZ,Tb) &
-               &     / (3.D0 * PI * SQRT(2.D0 * PI) * EPS0**2 * AMB * AME &
-               &             * (ABS(PTeV(NR)) * rKeV / AME)**1.5D0)
-          rNubi(NR) = PNiV(NR) * 1.D20 * PZ**2 * PZ**2 * AEE**4 &
-               &     * coulog(1.d0,PNeV(NR),PTeV(NR),PTiV(NR),PA,PZ,PA,PZ,Tb) &
-               &     / (4.D0 * PI * EPS0**2 * AMB) &
-               &     * (1.D0 / AMB + 1.D0 / AMI) &
-               &     * 1.D0 / (Vb**3 + 0.75D0 * SQRT(PI) * Vti**3)
-
-          rNuPara = CORR(Zeff) * rNube(NR)
-          rNube1(NR)    =(BthV(NR)**2 * rNuPara + BphV(NR)**2 * rNube(NR)) / BBL**2
-          rNube2(NR)    = BphV(NR) * BthV(NR) / BBL**2 * (rNuPara - rNube(NR))
-          rNube3(NR)    =(BphV(NR)**2 * rNuPara + BthV(NR)**2 * rNube(NR)) / BBL**2
-          rNube2Bth(NR) = BphV(NR) / BBL**2 * (rNuPara - rNube(NR))
-
+       if(PNBH == 0.d0 .and. PNbV(NR) < 1.D-8) then
+          rNuD (NR) = 0.d0
+          rNuB (NR) = 0.d0
+       else
           !     *** deflection time of beam ions against bulk ions ***
           !     (Takamura (3.26) + Tokamaks 3rd p64)
-          !     ** rNuD is similar to rNubi. **
           xl = Vb / Vti
-          rNuD(NR) = PNiV(NR) *1.D20 * PZ**2 * PZ**2 * AEE**4 &
-               &   * coulog(1.d0,PNeV(NR),PTeV(NR),PTiV(NR),PA,PZ,PA,PZ,Tb) &
-               &   / (2.D0 * PI * EPS0**2 * AMB**2 * Vb**3) &
-               &   * (  SQRT(1.D0 - EXP(- 4.D0 * xl**2 / PI)) &
-               &      - 2.D0 * xl / (4.D0 * xl**3 + 3.D0 * SQRT(PI)))
+          rNuD(NR) = Var(NR,2)%n *1.d20 * achg(2)**2 * achgb**2 * AEE**4 &
+               &   * coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T,amas(2),achg(2),amb,achgb,PTbV(NR)) &
+               &   / (2.d0 * Pi * EPS0**2 * (amb*amp)**2 * Vb**3) &
+               &   * (  sqrt(1.d0 - exp(- 4.d0 * xl**2 / Pi)) &
+               &      - 2.d0 * xl / (4.d0 * xl**3 + 3.d0 * sqrt(Pi)))
 
           !     *** Beam ion-electron slowing-down time
-          !     (Tokamaks 3rd, A_D from below (2.13.2) + (2.14.1), assuming AMB >> AME
-          !      and Vb/(SQRT(2)*Vte) << 1)
+          !     (Tokamaks 3rd, A_D from below (2.13.2) + (2.14.1), assuming AMB >> amas(1)
+          !      and Vb/(sqrt(2)*Vte) << 1)
           !     (originally from the book by Spitzer (1962))
-          !     Note that this is a half value of rNube(NR).
-          rNubes = PNeV(NR) * 1.D20 * PZ**2 * AEE**4 &
-               & * coulog(1.d0,PNeV(NR),PTeV(NR),PTiV(NR),PA,PZ,PA,PZ) &
-               & / (6.D0 * PI * SQRT(2.D0 * PI) * EPS0**2 * AMB * AME &
-               & * (ABS(PTeV(NR)) * rKeV / AME)**1.5D0)
+          rNubes = Var(NR,1)%n * 1.d20 * achg(1)**2 * achgb**2 * AEE**4 &
+               & * coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T,amb,achgb,amas(1),achg(1)) &
+!               & * coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T,amb,achgb,amb,achgb) & ! original, but could be wrong
+               & / (6.d0 * Pi * sqrt(2.d0 * Pi) * EPS0**2 * amb * amas(1) * amp**2 &
+               & * (abs(Var(NR,1)%T) * rKilo / (amas(1) * amqp))**1.5d0)
 
           ! The definition given below is a "energy slowing down time" and is not
           ! "particle slowing down time". At present, we assume the former is the
           ! same as the latter.
-          rNuB(NR) = rNubes * 3.D0 / LOG(1.D0 + (Eb / Ecr)**1.5D0)
-!!          rNuB(NR) = rNube(NR) * 1.5D0 / LOG(1.D0 + (Eb / Ecr)**1.5D0)
-!!          rNuB(NR) = rNube(NR) + rNubi(NR)
-!       write(6,'(1P4E15.7)') rho(nr),2.d0*pi*q(nr)*RR/Vbpara(nr),1.d0/rnube(nr),1.d0/rnubi(nr)!1.d0/rnub(nr)
-       END IF
+          rNuB(NR) = rNubes * 3.d0 / log(1.d0 + (Eb / Ecr)**1.5d0)
+       end if
 
        !     *** Heating profile ***
 
@@ -445,15 +738,15 @@ contains
        if(iflag_file /= 1) then
           ! Source profile for passing ions in temporal and graphic use
           if(MDLNBD == 2) then
-             SNBTGi(NR)=(PNBTi10 * SNBTi1(NR) + PNBTi20 * SNBTi2(NR)) / (Eb * rKeV * 1.D20)
+             SNBTGi(NR)=(PNBTi10 * SNBTi1(NR) + PNBTi20 * SNBTi2(NR)) / (Eb * rKeV * 1.d20)
           else
-             SNBTGi(NR)=(PNBT10  * SNBT1(NR)  + PNBT20  * SNBT2(NR))  / (Eb * rKeV * 1.D20)
+             SNBTGi(NR)=(PNBT10  * SNBT1(NR)  + PNBT20  * SNBT2(NR))  / (Eb * rKeV * 1.d20)
           end if
           ! Source profile for trapped ions with banana orbit effect
           !   in temporal and graphic use
-          SNBPDi(NR)= PNBPi0 * SNBPDi(NR) / (Eb * rKeV * 1.D20)
+          SNBPDi(NR)= PNBPi0 * SNBPDi(NR) / (Eb * rKeV * 1.d20)
           ! Birth profiles for heating power
-          SNB(NR)   = PNB(NR) / (Eb * rKeV * 1.D20)
+          SNB(NR)   = PNB(NR) / (Eb * rKeV * 1.d20)
           ! Birth profiles for electrons and thermal ions
           SNBe(NR)  = SNB(NR)
           SNBi(NR)  = SNB(NR)
@@ -461,18 +754,22 @@ contains
           ! Source profiles for beam ions with banana orbit effect
           SNBb(NR)  = SNBPDi(NR) + SNBTGi(NR)
           ! Torque injection part
-          MNB(NR)   = PNBCD * SNBTGi(NR) * PNBMPD
+          MNB(NR)   = PNBCD * SNBTGi(NR) * PNBPTC + SNBPDi(NR) * PNBMPD
        end if
 
        PRFe(NR)  = PRFe0 * SRFe(NR)
        PRFi(NR)  = PRFi0 * SRFi(NR)
 
        !     *** NBI power deposition for graphics ***
+       !     see eq. (9.7) of [Hirshman and Sigmar, NF 22 (1981) 1079] 
 
-       PNBe(NR) = Eb * SNB(NR) * PNBcol_e(NR) * (1.D20 * rKeV)
-       PNBi(NR) = Eb * SNB(NR) * PNBcol_i(NR) * (1.D20 * rKeV) &
-            &   + AMb * Vb * MNB(NR) * (BthV(NR)*UithV(NR)+BphV(NR)*UiphV(NR))/BBL * 1.D20
+       PNBe(NR) = Eb * SNB(NR) * PNBcol_e(NR) * (1.d20 * rKeV)
+       PNBi(NR) = Eb * SNB(NR) * PNBcol_i(NR) * (1.d20 * rKeV) &
+            &   + amb*amp * MNB(NR) * Var(NR,2)%BUpar / bbt(NR) * BUbparV(NR) * 1.d20
 
+       !     *** Parallel torque injection ***
+       !     BSmb = m_b dot{n}_b <B v_//0>
+       BSmb(NR) = (amb * amp) * MNB(NR) * (sqrt(bbt(NR)) * Vbpara(NR))
     end do
 
   end subroutine txauxs
@@ -480,84 +777,84 @@ contains
 !***************************************************************
 !
 !   Heating deposition profile
-!     Input : R0    : Deposition center (m)
-!             RW    : Deposition width (m)
+!     Input : R0    : Deposition center (-)
+!             RW    : Deposition width (-)
 !             CHR   : Trapped NB, passing NB, RF or Additional torque
 !             PNBCD : Injection direction, optional
 !     Output : S(0:NRMAX) : Deposition profile
-!              SINT       : Normalization factor
+!              SINT       : Normalization factor (volume integrated)
 !
 !***************************************************************
 
   subroutine deposition_profile(S,SINT,R0,RW,CHR,PNBCD)
-    use tx_commons, only : NRMAX, NRA, FSRP, R, RA, RB, PI, RR, &
-         &                 AMb, Vb, PZ, AEE, BthV, Q, BphV
-    use tx_interface, only : INTG_F
-    USE libitp
+    use tx_commons, only : NRMAX, NRA, FSRP, RA, Pi, RR, &
+         &                 amb, amqp, Vb, achgb, BthV, Q, BphV, rho, epst
+    use tx_core_module, only : intg_vol
+    use libitp, only : sctr
     real(8), intent(in)  :: R0, RW
     real(8), intent(in), optional :: PNBCD
     character(len=*), intent(in) :: CHR
     real(8), intent(out), dimension(0:NRMAX) :: S
     real(8), intent(out) :: SINT
     integer(4) :: nr
-    real(8) :: EpsL, Rshift, Rpotato, rhop
+    real(8) :: Rshift, Rpotato, rhop
 
     if(CHR == 'Additional') then
-       S(0:NRA) = 1.D0 - (R(0:NRA) / RA)**2
-       S(NRA+1:NRMAX) = 0.D0
-    else if(CHR == 'RFe' .OR. CHR == 'RFi') then
-       S(0:NRMAX) = EXP(- ((R(0:NRMAX) - R0) / RW)**2) * (1.D0 - (R(0:NRMAX) / RB)**4)
+!       S(0:NRA) = 1.d0 - rho(0:NRA)**2
+       S(0:NRA) = exp(- ((rho(0:NRA) - R0) / RW)**2) * (1.d0 - rho(0:NRA)**4)
+       S(NRA+1:NRMAX) = 0.d0
+    else if(CHR == 'RFe' .or. CHR == 'RFi') then
+       S(0:NRMAX) = exp(- ((rho(0:NRMAX) - R0) / RW)**2) * (1.d0 - (rho(0:NRMAX)/rho(nrmax))**4)
     else if(CHR == 'NB') then
-       if(abs(FSRP) > 0.D0) then
-          S(0:NRMAX) = EXP(- ((R(0:NRMAX) - R0) / RW)**2) * (1.D0 - (R(0:NRMAX) / RB)**4)
+       if(abs(FSRP) > 0.d0) then
+          S(0:NRMAX) = exp(- ((rho(0:NRMAX) - R0) / RW)**2) * (1.d0 - (rho(0:NRMAX)/rho(nrmax))**4)
        else
-          S(0:NRA) = EXP(- ((R(0:NRA) - R0) / RW)**2) * (1.D0 - (R(0:NRA) / RA)**4)
-          S(NRA+1:NRMAX) = 0.D0
+          S(0:NRA) = exp(- ((rho(0:NRA) - R0) / RW)**2) * (1.d0 - rho(0:NRA)**4)
+          S(NRA+1:NRMAX) = 0.d0
        end if
     else
-       if(present(PNBCD) .EQV. .FALSE.) stop 'deposition_profile: input error!'
+       if(present(PNBCD) .eqv. .false.) stop 'deposition_profile: input error!'
        do nr = 0, nrmax
-          EpsL = R(NR) / RR
-          if(nr /= 0) rhop = AMb * Vb / (PZ * AEE * BthV(NR)) ! poloidal Larmor radius
+          if(nr /= 0) rhop = amb * Vb * amqp / (achgb * BthV(NR)) ! poloidal Larmor radius
           if(CHR == 'NB_TRAP') then ! trapped particle
              ! potato width
-             Rpotato = (Q(NR)**2*(AMb * Vb / (PZ * AEE * BphV(NR)))**2*RR)**(1.D0/3.D0)
+             Rpotato = (Q(NR)**2*(amb * Vb * amqp / (achgb * BphV(NR)))**2*RR)**(1.d0/3.d0)
              if(nr == 0) then
                 Rshift = PNBCD * Rpotato ! potato particle
              else
-                Rshift = PNBCD * MIN(SQRT(EpsL) * rhop, Rpotato) ! potato or banana particle
+                Rshift = PNBCD * min(sqrt(epst(nr)) * rhop, Rpotato) ! potato or banana particle
              end if
           else
              if (nr == 0) then ! passing particle
-                Rshift = PNBCD * (AMb * Vb * Q(NR) / (PZ * AEE * BphV(NR)))
+                Rshift = PNBCD * (amb * Vb * Q(NR) * amqp / (achgb * BphV(NR)))
              else
-                Rshift = PNBCD * (     EpsL  * rhop)
+                Rshift = PNBCD * (     epst(nr)  * rhop)
              end if
           end if
 
-          if(abs(FSRP) > 0.D0) then
-             S(NR) = EXP(- (((R(NR) + Rshift) - R0) / RW)**2) * (1.D0 - (R(NR) / RB)**4)
+          if(abs(FSRP) > 0.d0) then
+             S(NR) = exp(- (((rho(nr) + Rshift/RA) - R0) / RW)**2) * (1.d0 - (rho(nr)/rho(nrmax))**4)
           else
              if(nr <= nra) then
-                S(NR) = EXP(- (((R(NR) + Rshift) - R0) / RW)**2) * (1.D0 - (R(NR) / RA)**4)
+                S(NR) = exp(- (((rho(nr) + Rshift/RA) - R0) / RW)**2) * (1.d0 - rho(NR)**4)
              else
-                S(NR) = 0.D0
+                S(NR) = 0.d0
              end if
           end if
        end do
 !!$       if(CHR == 'NB_TRAP') then
-!!$          if(PNBCD > 0.D0) then
-!!$             S(0) = AITKEN2P(R(0),S(1),S(2),S(3),R(1),R(2),R(3))
-!!$          else if(PNBCD < 0.D0) then
-!!$             S(0) = 0.D0
+!!$          if(PNBCD > 0.d0) then
+!!$             S(0) = AITKEN2P(rho(0),S(1),S(2),S(3),rho(1),rho(2),rho(3))
+!!$          else if(PNBCD < 0.d0) then
+!!$             S(0) = 0.d0
 !!$          end if
 !!$       end if
     end if
 
     ! Modify S(0) and S(1) so that S' becomes zero at the axis
-    call sctr(R(1),R(2),R(3),R(4),S(2),S(3),S(4),S(0),S(1))
+    call sctr(rho(1),rho(2),rho(3),rho(4),S(2),S(3),S(4),S(0),S(1))
 
-    SINT = 2.D0 * PI * INTG_F(S)
+    SINT = intg_vol(S)
 
   end subroutine deposition_profile
 
@@ -571,39 +868,38 @@ contains
 !***************************************************************
 
   subroutine shift_prof(f,kchar,direct)
-    use tx_commons, only : NRMAX, R, RR, AMb, Vb, PZ, AEE, BthV, Q, BphV, PNBCD
-    USE libitp
+    use tx_commons, only : NRMAX, RR, amb, amqp, Vb, achgb, BthV, Q, BphV, epst, rpt
+    use libitp, only: aitken
     real(8), dimension(0:NRMAX), intent(inout) :: f
     character(len=4), intent(in) :: kchar
     real(8), intent(in) :: direct
     integer(4) :: nr, nrl
-    real(8) :: EpsL, rhop, Rpotato, Rshift
+    real(8) :: rhop, Rpotato, Rshift
     real(8), dimension(0:nrmax) :: r_shift, fl1, fl2
     real(8), dimension(:), allocatable :: r_alloc, f_alloc
 
     ! Shift the horizontal axis
     do nr = 0, nrmax
-       EpsL = R(NR) / RR
-       if(nr /= 0) rhop = AMb * Vb / (PZ * AEE * BthV(NR)) ! poloidal Larmor radius
+       if(nr /= 0) rhop = amb * Vb * amqp / (achgb * BthV(NR)) ! poloidal Larmor radius
        if(kchar == 'TRAP') then
           ! potato width
-          Rpotato = (Q(NR)**2*(AMb * Vb / (PZ * AEE * BphV(NR)))**2*RR)**(1.D0/3.D0)
+          Rpotato = (Q(NR)**2*(amb * Vb * amqp / (achgb * BphV(NR)))**2*RR)**(1.d0/3.d0)
           if(nr == 0) then
              Rshift = direct * Rpotato ! potato particle
           else
-             Rshift = direct * MIN(SQRT(EpsL) * rhop, Rpotato) ! potato or banana particle
+             Rshift = direct * min(sqrt(epst(nr)) * rhop, Rpotato) ! potato or banana particle
           end if
        else if(kchar == 'PASS') then
           if (nr == 0) then ! passing particle
-             Rshift = direct * (AMb * Vb * Q(NR) / (PZ * AEE * BphV(NR)))
+             Rshift = direct * (amb * Vb * Q(NR) * amqp / (achgb * BphV(NR)))
           else
-             Rshift = direct * (     EpsL  * rhop)
+             Rshift = direct * (     epst(nr)  * rhop)
           end if
        else
           stop 'shift_prof: input error!'
        end if
 
-       r_shift(nr) = r(nr) - Rshift
+       r_shift(nr) = rpt(nr) - Rshift
     end do
 
     fl1(0:nrmax) = 0.d0
@@ -622,14 +918,14 @@ contains
        r_alloc(0:nrl) = abs(r_shift(nrl:0:-1))
        f_alloc(0:nrl) = f(nrl:0:-1)
        do nr = 0, nrl
-          call aitken(r(nr),fl1(nr),r_alloc,f_alloc,2,nrl+1)
+          call aitken(rpt(nr),fl1(nr),r_alloc,f_alloc,2,nrl+1)
        end do
        deallocate(r_alloc,f_alloc)
     end if
 
     ! Interpolate
     do nr = 0, nrmax
-       call aitken(r(nr),fl2(nr),r_shift,f,2,nrmax+1)
+       call aitken(rpt(nr),fl2(nr),r_shift,f,2,nrmax+1)
     end do
 
     ! Sum of both contributions 
@@ -648,7 +944,7 @@ contains
 !***************************************************************
 
   pure real(8) function rate_to_ion(x) result(f)
-    use tx_commons, only : PI
+    use tx_commons, only : Pi
     real(8), intent(in) :: x
 
     if (x == 0.d0) then
@@ -656,7 +952,7 @@ contains
     else
        f = 1.d0 / x * (  1.d0 / 3.d0 * log((1.d0 - sqrt(x) + x) / (1.d0 + sqrt(x))**2) &
             &          + 2.d0 / sqrt(3.d0) * (atan((2.d0 * sqrt(x) - 1.d0) / sqrt(3.d0)) &
-            &          + PI / 6.d0))
+            &          + Pi / 6.d0))
     end if
 
   end function Rate_to_ion
@@ -704,4 +1000,43 @@ contains
     
   end function bosch_fusion
 
+!***************************************************************
+!
+!   Ionization of atomic hydrogen by protons
+!     valid for 100eV => 5*10^6eV
+! 
+!     (R.L. Freeman and E.M. Jones, Culham Laboratory Report, CLM-R-137 (May 1974))
+!
+!     Inputs (real*8): Ekev     : Energy [keV]
+!     Output (real*8): SigIzPro : Ionization cross-section by protons [m^2]
+!
+!     Internal (real*8): a : Table of cross-section in TABLE 2
+!                                     ^^^^^^^^^^^^^
+!***************************************************************
+
+  real(8) function SigIzPro(Ekev)
+
+    real(8), intent(in) :: Ekev
+    real(8) :: x, Ekev_temp
+    real(8), dimension(0:6) :: a
+    data a /-0.4203309d02, 0.3557321d01, -0.1045134d01, 0.3139238d0, &
+         &  -0.7454475d-1, 0.8459113d-2, -0.3495444d-3/
+
+    if(Ekev < 1.d-1) then
+       write(6,'(A,ES12.4)') &
+            'Function SigIzPro: Out of energy range. Ekev=', Ekev
+       Ekev_temp=1.d-1
+    else if(Ekev > 5.d3) then
+       write(6,'(A,ES12.4)') &
+            'Function SigIzPro: Out of energy range. Ekev=', Ekev
+       Ekev_temp=5.d3
+    else
+       Ekev_temp=Ekev
+    endif
+    x = log(Ekev_temp)
+    SigIzPro = exp(a(0)+x*(a(1)+x*(a(2)+x*(a(3)+x*(a(4)+x*(a(5)+x*a(6)))))))*1.d-4
+
+  end function SigIzPro
+
 end module aux_system
+
