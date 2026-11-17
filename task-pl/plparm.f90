@@ -36,7 +36,7 @@ CONTAINS
       INTEGER:: ns
 
 1     CONTINUE
-      DO ns=1,nsmax
+      DO ns=1,nsm
          pt_save(ns)=pt(ns)
          pu_save(ns)=pu(ns)
          pt(ns)=0.d0
