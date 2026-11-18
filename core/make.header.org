@@ -1,0 +1,60 @@
+### $Id$ ###
+
+## if you have lapack library
+#LAPACK = lapack.f
+#LIBLA=/usr/local/lib/lapack.a /usr/local/lib/blas.a
+#LIBLA= -L/opt/intel/mkl/lib -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lm
+#LIBLA=-L$(PETSC_DIR)/$(PETSC_ARCH)/lib -lflapack -lfblas
+#LIBLA=-L/opt/local/lib/lapack -llapack -lblas
+#MODLA95 = -I/usr/local/lib/lapack95_modules
+#MODLA95 = -lmkl_lapack95
+#MODLA95 =
+## else
+LAPACK = nolapack.f
+LIBLA =
+MODLA95 = 
+
+## if you have mdslib
+#MDSPLUS = mdsplus.f
+#MDSLIB = -lMdsLib
+## else
+MDSPLUS = nomdsplus.f
+MDSLIB =
+
+## mpi compile command
+MF77 = mpif77
+MF90 = mpif90
+MF95 = mpif90
+MFC  = $(MF90)
+
+GFLIBS=-L/usr/local/lib -lg3d -lgsp -lgdp -L/usr/X11R6/lib -lX11
+GLLIBS=-L/usr/local/lib -lgsgl
+
+## for Linux Intel fortran compiler EM64T lib64
+#GFLIBS=-L/usr/local/lib64 -lg3d-ifc64 -lgsp-ifc64 -lgdp-ifc64 -L/usr/X11R6/lib64 -lX11
+#GLLIBS=-L/usr/local/lib64 -lgsgl-ixc
+#OFLAGS = -O3 -vec-report0 -mcmodel=medium -shared-intel
+#DFLAGS = -g -CB -CU -traceback -debug extended -vec-report0 -align -check all -fpe-all0 -fmath-errno -fstack-security-check -mcmodel=medium -shared-intel
+#FCFIXED = ifort
+#FCFREE  = ifort
+#MOD = mod
+#MODDIR = -module mod
+#LD=ld
+#LDFLAGS=-r -o
+#FPP=
+
+## for macos gfortran (64bit) lib
+## for linux gfortran (64bit) lib
+#GFLIBS=-L/usr/local/lib -lg3d-gfc64 -lgsp-gfc64 -lgdp-gfc64  -L/usr/X11R6/lib -lX11
+#OFLAGS = -g -O3 -m64 -std=legacy
+#DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
+#FCFIXED = gfortran -ffixed-form
+#FCFREE = gfortran -ffree-form
+#MOD = mod
+#MODDIR = -Jmod
+#LD=ld
+#LDFLAGS=-r -o
+#FPP=
+
+FLIBS = $(GFLIBS) $(MDSLIB) $(LIBLA)
+#FLIBS = $(GLLIBS) $(MDSLIB) $(LIBLA)
